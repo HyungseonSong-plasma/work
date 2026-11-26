@@ -68,10 +68,11 @@ jobs:
           fi
 
           open_prs=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")
-          if jq -e --arg branch "$HEAD_BRANCH" --arg repo "$GITHUB_REPOSITORY" '
+          in_use=$(jq --arg branch "$HEAD_BRANCH" --arg repo "$GITHUB_REPOSITORY" '
             any(.[][]; (.head.repo.full_name == $repo and .head.ref == $branch)
                     or (.base.repo.full_name == $repo and .base.ref == $branch))
-          ' <<< "$open_prs" >/dev/null; then
+          ' <<< "$open_prs")
+          if [[ "$in_use" != false ]]; then
             echo "Skip: branch is used by an open PR."
             exit 0
           fi
