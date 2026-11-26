@@ -1,0 +1,70 @@
+# FileRank: C
+name: Merge pull request
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to merge
+        required: true
+        type: string
+      expected_head_sha:
+        description: Reviewed PR head commit SHA (40 hexadecimal characters)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  merge:
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Validate and merge the requested PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          set -euo pipefail
+
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::Invalid pull request number."
+            exit 1
+          }
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Expected a full lowercase Git commit SHA."
+            exit 1
+          }
+
+          default_branch=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')
+          [[ "$GITHUB_REF" == "refs/heads/$default_branch" ]] || {
+            echo "::error::Run this workflow on the current default branch."
+            exit 1
+          }
+
+          endpoint="repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
+          pr=$(gh api "$endpoint")
+          if ! jq -e --arg sha "$EXPECTED_HEAD_SHA" --arg base "$default_branch" --arg repo "$GITHUB_REPOSITORY" '
+            .state == "open" and .draft == false and .merged == false
+            and .base.ref == $base and .base.repo.full_name == $repo
+            and .head.sha == $sha
+          ' <<< "$pr" >/dev/null; then
+            echo "::error::PR must be open, ready for review, target the default branch and match the expected head SHA."
+            exit 1
+          fi
+
+          # The API checks the head SHA again atomically at merge time.
+          # GitHub enforces configured branch protection and merge rules.
+          result=$(gh api --method PUT "$endpoint/merge" \
+            -f sha="$EXPECTED_HEAD_SHA" \
+            -f merge_method=merge)
+          jq -e '.merged == true and (.sha | type == "string")' <<< "$result" >/dev/null
+          merge_sha=$(jq -r '.sha' <<< "$result")
+          printf 'Merged PR #%s: %s\n' "$PR_NUMBER" "$merge_sha"
+          printf 'Merged PR #%s\n\nMerge commit: `%s`\n' "$PR_NUMBER" "$merge_sha" >> "$GITHUB_STEP_SUMMARY"
