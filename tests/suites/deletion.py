@@ -15,11 +15,11 @@ from tests.suites.model import TestSuite, REPO, REF, SHA
 class DeletionContract(TestSuite):
     def setUp(self):
         self.repo = {"id": 1, "default_branch": "main"}
-        self.run = {"id": 12, "repository": {"id": 1, "full_name": REPO},
+        self.run_data = {"id": 12, "repository": {"id": 1, "full_name": REPO},
                     "head_sha": SHA, "run_attempt": 1, "status": "completed",
                     "path": ".github/workflows/disposable.yml"}
         self.api = Mock(side_effect=lambda method, endpoint:
-                        self.repo if endpoint == f"repos/{REPO}" else deepcopy(self.run))
+                        self.repo if endpoint == f"repos/{REPO}" else deepcopy(self.run_data))
         self.remove = Mock()
         self.parameters = dict(api=self.api, remove=self.remove, repository=REPO,
                                run_ref=REF, run_id=12, expected_head_sha=SHA,
@@ -59,22 +59,22 @@ class DeletionContract(TestSuite):
                         {"run_attempt": 2}, {"id": 99},
                         {"repository": {"id": 2, "full_name": REPO}}):
             with self.subTest(changes=changes):
-                original = deepcopy(self.run)
-                self.run.update(changes)
+                original = deepcopy(self.run_data)
+                self.run_data.update(changes)
                 self.assert_rejected(deletion.delete, "actions", **self.parameters)
-                self.run = original
+                self.run_data = original
         self.remove.assert_not_called()
 
     def test_actions_reject_protected_workflows(self):
         for path in deletion.PROTECTED_WORKFLOWS:
             with self.subTest(path=path):
-                self.run["path"] = path
+                self.run_data["path"] = path
                 self.assert_rejected(deletion.delete, "actions", **self.parameters)
         self.remove.assert_not_called()
 
     def test_actions_reject_changed_run_before_delete(self):
-        self.api.side_effect = [self.repo, self.run,
-                                dict(self.run, run_attempt=2)]
+        self.api.side_effect = [self.repo, self.run_data,
+                                dict(self.run_data, run_attempt=2)]
         self.assert_rejected(deletion.delete, "actions", **self.parameters)
         self.remove.assert_not_called()
 
