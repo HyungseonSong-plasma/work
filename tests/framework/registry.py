@@ -39,7 +39,7 @@ def build_suite(loader=None, names=None, registered=None):
     for name in names:
         case = registered[name]
         # One explicitly identified framework self-test class, not a module-wide bypass.
-        module = sys.modules.get("tests.framework_tests.registry_contract")
+        module = sys.modules.get("tests.suites.registry_contract")
         framework_test = (name == "registry" and module is not None
                           and case is getattr(module, "RegistryContract", None))
         expected = (tuple(unittest.defaultTestLoader.getTestCaseNames(case))
