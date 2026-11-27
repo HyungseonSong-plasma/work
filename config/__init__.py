@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def load_registry(name):
-    if name not in {"commands", "executions", "workflows", "deletions", "tests"}:
+    if name not in {"commands", "executions", "workflows", "deletions", "tests", "actions_policy"}:
         raise ValueError("Unknown registry file.")
     path = ROOT / (name + ".toml")
     if path.is_symlink() or not path.is_file():
