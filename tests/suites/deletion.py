@@ -67,12 +67,68 @@ class DeletionContract(TestSuite):
                 self.run_data = original
         self.remove.assert_not_called()
 
-    def test_actions_reject_protected_workflows(self):
-        for path in deletion.PROTECTED_WORKFLOWS:
+    def test_latest_success_retained_for_each_workflow(self):
+        for path in deletion.actions_policy()["protected_workflows"]:
             with self.subTest(path=path):
-                self.run_data["path"] = path
+                run = dict(self.run_data, path=path, workflow_id=7,
+                           conclusion="success", created_at="2026-11-27T10:00:00Z")
+                self.api.side_effect = [self.repo, run, {"total_count": 1, "workflow_runs": [run]}]
                 self.assert_rejected(deletion.delete, "actions", **self.parameters)
         self.remove.assert_not_called()
+
+    def test_older_success_can_be_deleted(self):
+        run = dict(self.run_data, path=".github/workflows/trigger.yml", workflow_id=7,
+                   conclusion="success", created_at="2026-11-27T10:00:00Z")
+        newer = dict(run, id=20, created_at="2026-11-27T11:00:00Z")
+        listing = {"total_count": 2, "workflow_runs": [newer, run]}
+        self.api.side_effect = [self.repo, run, listing, run, listing]
+        self.assertEqual(deletion.delete("actions", **self.parameters), "Deleted Actions run: 12")
+        self.remove.assert_called_once()
+
+    def test_pinned_run_cannot_be_deleted(self):
+        pinned = deletion.actions_policy()["pinned_run_ids"][0]
+        self.run_data["id"] = pinned
+        self.assert_rejected(deletion.delete, "actions", **dict(self.parameters, run_id=pinned))
+        self.remove.assert_not_called()
+
+    def test_batch_preflight_rejects_before_any_delete(self):
+        targets = [{"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1},
+                   {"run_id": 14, "expected_head_sha": SHA, "expected_run_attempt": 1}]
+        self.api.side_effect = [self.repo, deepcopy(self.run_data),
+                                dict(self.run_data, id=14, status="in_progress")]
+        params = {key: value for key, value in self.parameters.items()
+                  if key not in ("run_id", "expected_head_sha", "expected_run_attempt")}
+        self.assert_rejected(deletion.delete, "actions_batch", targets=targets, **params)
+        self.remove.assert_not_called()
+
+    def test_batch_deletes_exact_targets(self):
+        targets = [{"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1},
+                   {"run_id": 14, "expected_head_sha": SHA, "expected_run_attempt": 1}]
+        first, second = deepcopy(self.run_data), dict(self.run_data, id=14)
+        self.api.side_effect = [self.repo, first, second, first, second]
+        params = {key: value for key, value in self.parameters.items()
+                  if key not in ("run_id", "expected_head_sha", "expected_run_attempt")}
+        self.assertEqual(deletion.delete("actions_batch", targets=targets, report=Mock(), **params),
+                         ["Deleted Actions run: 12", "Deleted Actions run: 14"])
+        self.assertEqual([call.args[0] for call in self.remove.call_args_list],
+                         [f"repos/{REPO}/actions/runs/12", f"repos/{REPO}/actions/runs/14"])
+
+    def test_batch_invalid_and_duplicate_rejected(self):
+        target = {"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1}
+        for targets in ([], [target, target], [dict(target, run_id=True)], [target] * 31):
+            self.assert_rejected(deletion.validate_actions_targets, targets)
+
+    def test_batch_comment_dispatches_once(self):
+        targets = [{"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1},
+                   {"run_id": 14, "expected_head_sha": SHA, "expected_run_attempt": 1}]
+        request = event("pr_merge.py")
+        request["comment"].update(created_at="now", updated_at="now",
+            body="/execute " + json.dumps({"execution": "delete actions", "runs": targets}))
+        dispatch = Mock()
+        self.assertEqual(trigger.dispatch_request(request, REPO, REF, dispatch),
+                         ("actions_delete.yml", "comment-12"))
+        dispatch.assert_called_once()
+        self.assertEqual(json.loads(dispatch.call_args.args[2]["inputs"]["runs"]), targets)
 
     def test_actions_reject_changed_run_before_delete(self):
         self.api.side_effect = [self.repo, self.run_data,

@@ -5,17 +5,25 @@ on:
     inputs:
       run_id:
         description: Exact reviewed workflow run ID
-        required: true
+        required: false
+        default: ''
         type: string
       expected_head_sha:
         description: Full reviewed run head SHA
-        required: true
+        required: false
+        default: ''
         type: string
       expected_run_attempt:
         description: Reviewed run attempt
-        required: true
+        required: false
+        default: ''
         type: string
 
+      runs:
+        description: Explicit JSON array of reviewed run targets (alternative to single inputs)
+        required: false
+        default: ''
+        type: string
       request_id:
         description: Optional source owner PR comment
         required: false
@@ -27,7 +35,10 @@ on:
         default: ''
         type: string
 
-run-name: Delete Actions run ${{ inputs.run_id }} ${{ inputs.request_id }}
+run-name: Delete Actions ${{ inputs.run_id || 'batch' }} ${{ inputs.request_id }}
+concurrency:
+  group: actions-delete-${{ github.repository_id }}
+  cancel-in-progress: false
 permissions: {}
 jobs:
   delete:
@@ -45,12 +56,22 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Delete one reviewed completed run
+      - name: Delete reviewed completed runs
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_RUN_ID: ${{ inputs.run_id }}
           TARGET_HEAD_SHA: ${{ inputs.expected_head_sha }}
           TARGET_RUN_ATTEMPT: ${{ inputs.expected_run_attempt }}
+          TARGET_RUNS: ${{ inputs.runs }}
           REQUEST_ID: ${{ inputs.request_id }}
           SOURCE_PR: ${{ inputs.source_pr }}
-        run: python3 -m app delete actions --run-id "$TARGET_RUN_ID" --expected-head-sha "$TARGET_HEAD_SHA" --expected-run-attempt "$TARGET_RUN_ATTEMPT" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
+        run: |
+          if [ -n "$TARGET_RUNS" ]; then
+            if [ -n "$TARGET_RUN_ID$TARGET_HEAD_SHA$TARGET_RUN_ATTEMPT" ]; then
+              echo "Single and batch inputs cannot be combined"
+              exit 1
+            fi
+            python3 -m app delete actions --runs "$TARGET_RUNS" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
+          else
+            python3 -m app delete actions --run-id "$TARGET_RUN_ID" --expected-head-sha "$TARGET_HEAD_SHA" --expected-run-attempt "$TARGET_RUN_ATTEMPT" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
+          fi
