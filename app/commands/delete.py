@@ -59,14 +59,15 @@ def validate_actions_context(event, repository, ref, actor_id, workflow_ref,
 
 @register("delete")
 class DeleteCommand(Command):
-    help = "Delete an explicitly approved GitHub Actions run"
+    help = "Delete explicitly approved GitHub Actions runs"
 
     @staticmethod
     def configure(parser):
         parser.add_argument("target", choices=("actions",))
-        parser.add_argument("--run-id", type=int, required=True)
-        parser.add_argument("--expected-head-sha", required=True)
-        parser.add_argument("--expected-run-attempt", type=int, required=True)
+        parser.add_argument("--run-id", type=int)
+        parser.add_argument("--runs", default="")
+        parser.add_argument("--expected-head-sha")
+        parser.add_argument("--expected-run-attempt", type=int)
         parser.add_argument("--request-id", default="")
         parser.add_argument("--source-pr", default="")
 
@@ -78,17 +79,31 @@ class DeleteCommand(Command):
         with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
             event = json.load(stream)
         repository, ref = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF"]
+        if args.runs:
+            if any(value is not None for value in
+                   (args.run_id, args.expected_head_sha, args.expected_run_attempt)):
+                raise ValueError("Choose single or batch, not both.")
+            request = {"execution": "delete actions", "runs": json.loads(args.runs)}
+        else:
+            request = {"execution": "delete actions", "run_id": args.run_id,
+                       "expected_head_sha": args.expected_head_sha,
+                       "expected_run_attempt": args.expected_run_attempt}
+        inputs = actions_request(request)
         validate_actions_context(
             event, repository, ref, os.environ["GITHUB_ACTOR_ID"],
-            os.environ["GITHUB_WORKFLOW_REF"], args.request_id, args.source_pr,
-            {"run_id": str(args.run_id), "expected_head_sha": args.expected_head_sha,
-             "expected_run_attempt": str(args.expected_run_attempt)})
-        result = delete(
-            args.target, api=github_api, remove=delete_resource,
-            repository=repository, run_ref=ref, run_id=args.run_id,
-            expected_head_sha=args.expected_head_sha,
-            expected_run_attempt=args.expected_run_attempt,
-            current_run_id=int(os.environ["GITHUB_RUN_ID"]))
-        print(result)
-        summary(result + "\n")
+            os.environ["GITHUB_WORKFLOW_REF"], args.request_id, args.source_pr, inputs)
+
+        def report(message):
+            print(message, flush=True)
+            summary(message + "\n")
+
+        common = dict(api=github_api, remove=delete_resource, repository=repository,
+                      run_ref=ref, current_run_id=int(os.environ["GITHUB_RUN_ID"]))
+        if args.runs:
+            delete("actions_batch", targets=request["runs"], report=report, **common)
+        else:
+            result = delete("actions", run_id=args.run_id,
+                            expected_head_sha=args.expected_head_sha,
+                            expected_run_attempt=args.expected_run_attempt, **common)
+            report(result)
         return 0

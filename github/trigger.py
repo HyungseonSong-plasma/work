@@ -5,6 +5,7 @@ import json
 import re
 
 from config import load_registry
+from github.delete import validate_actions_targets
 from github.model import WorkflowRegistry, dispatch_workflow
 from scripts.execute import EXECUTIONS, resolve_execution
 
@@ -59,19 +60,20 @@ def comment_request(event):
 
 
 def actions_request(request):
-    """Separate request contract: exact reviewed run, never a queue entry."""
-    if not isinstance(request, dict) or set(request) != {
-        "execution", "run_id", "expected_head_sha", "expected_run_attempt"
-    } or request["execution"] != "delete actions":
+    """Validate the single-run or exact batch request."""
+    if not isinstance(request, dict) or request.get("execution") != "delete actions":
         raise ValueError("Invalid Actions deletion request.")
-    if any(type(request[key]) is not int or request[key] <= 0
-           for key in ("run_id", "expected_run_attempt")):
-        raise ValueError("Expected positive run ID and attempt.")
-    if not isinstance(request["expected_head_sha"], str) or not re.fullmatch(
-            r"[0-9a-f]{40}", request["expected_head_sha"]):
-        raise ValueError("Expected a full lowercase Git commit SHA.")
-    return {key: str(request[key]) for key in
-            ("run_id", "expected_head_sha", "expected_run_attempt")}
+    if set(request) == {"execution", "runs"}:
+        targets = validate_actions_targets(request["runs"])
+        return {"runs": json.dumps(targets, sort_keys=True, separators=(",", ":"))}
+    if set(request) != {
+        "execution", "run_id", "expected_head_sha", "expected_run_attempt"
+    }:
+        raise ValueError("Invalid Actions deletion request.")
+    target = {key: request[key] for key in
+              ("run_id", "expected_head_sha", "expected_run_attempt")}
+    validate_actions_targets([target])
+    return {key: str(value) for key, value in target.items()}
 
 
 def route_actions(event, default, request_id, request):
