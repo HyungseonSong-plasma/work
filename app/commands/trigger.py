@@ -5,7 +5,7 @@ import json
 import os
 
 from app.registry import register
-from app.commands._summary import _summary
+from app.commands.model import Command, summary
 from github.trigger import dispatch_request
 
 
@@ -19,18 +19,14 @@ def trigger():
         event, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF"],
     )
     print(f"Submitted {workflow}: {request_id}")
-    _summary(f"Submitted `{workflow}` for `{request_id}`.\n\n"
+    summary(f"Submitted `{workflow}` for `{request_id}`.\n\n"
              "Execution result is reported by the dispatched run.\n")
     return 0
 
 
 @register("trigger")
-class TriggerCommand:
+class TriggerCommand(Command):
     help = "Validate a PR comment and route it"
-
-    @staticmethod
-    def configure(parser):
-        pass
 
     @staticmethod
     def execute(args):

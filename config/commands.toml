@@ -1,2 +1,2 @@
 # FileRank: C
-commands = ["trigger","execute","task","test"]
+commands = ["trigger","execute","task","test", "delete"]

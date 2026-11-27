@@ -10,11 +10,12 @@ from app.registry import configured_commands
 from config import load_names, load_registry, require_deletion
 from github.model import WorkflowRegistry
 from scripts import execute
+from tests.suites.model import TestSuite
 from tests.registry import register
 
 
 @register("configuration")
-class ConfigurationContract(unittest.TestCase):
+class ConfigurationContract(TestSuite):
     def test_configured_commands_exclude_unlisted(self):
         with patch("app.registry.load_names", return_value=("trigger",)):
             self.assertEqual(tuple(configured_commands()), ("trigger",))
@@ -42,10 +43,10 @@ class ConfigurationContract(unittest.TestCase):
 
     def test_deletion_config(self):
         require_deletion("branch")
-        for target in ("issue", "actions", "unknown"):
+        require_deletion("actions")
+        for target in ("issue", "unknown"):
             with self.subTest(target=target):
-                with self.assertRaises(ValueError):
-                    require_deletion(target)
+                self.assert_rejected(require_deletion, target)
 
     def test_issue_cannot_be_enabled_by_config_alone(self):
         with patch("config.load_registry", return_value={

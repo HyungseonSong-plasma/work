@@ -1,14 +1,15 @@
 # FileRank: C
-"""Shared offline test fixtures."""
+"""Common offline test-suite model and shared deterministic fixtures."""
 
 import json
+import unittest
 from pathlib import Path
 
 SHA = "a" * 40
 PARAMS = json.dumps({"pr_number": 7, "expected_head_sha": SHA})
 REPO = "example/work"
 REF = "refs/heads/main"
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def event(expression):
@@ -21,3 +22,11 @@ def event(expression):
         "sender": {"id": 1},
         "issue": {"number": 7, "pull_request": {}},
     }
+
+
+class TestSuite(unittest.TestCase):
+    """Common contract-test helpers; all external operations are mocked."""
+
+    def assert_rejected(self, operation, *args, **kwargs):
+        with self.assertRaises(ValueError):
+            operation(*args, **kwargs)

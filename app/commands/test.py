@@ -4,15 +4,12 @@
 import unittest
 
 from app.registry import register
+from app.commands.model import Command
 
 
 @register("test")
-class TestCommand:
+class TestCommand(Command):
     help = "Run registered offline regression tests"
-
-    @staticmethod
-    def configure(parser):
-        pass
 
     @staticmethod
     def execute(args):

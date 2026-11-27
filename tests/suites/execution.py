@@ -9,12 +9,12 @@ from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, task as task_command
 from scripts import execute
-from tests.fixture import PARAMS, REPO, REF, ROOT, SHA
+from tests.suites.model import TestSuite, PARAMS, REPO, REF, ROOT, SHA
 from tests.registry import register
 
 
 @register("execution")
-class ExecutionContract(unittest.TestCase):
+class ExecutionContract(TestSuite):
     def test_reject_serial_in_single_mode(self):
         with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch",
                                      "EXECUTION": "pr_merge.py - branch_delete.py",
@@ -59,7 +59,7 @@ class ExecutionContract(unittest.TestCase):
                 merge.assert_called_once_with(task_command.github_api, REPO, REF, "7", SHA)
 
     def test_branch_disabled_blocks_before_api(self):
-        from scripts.branch_delete import delete_branch
+        from github.delete import delete_branch
         api, git = Mock(), Mock()
         with patch("config.load_registry", return_value={
                 "branch": {"enabled": False, "permission": "contents: write"}}):

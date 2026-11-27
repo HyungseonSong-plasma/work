@@ -4,24 +4,24 @@
 import os
 
 from app.registry import register
-from app.commands._summary import _summary
-from github.model import github_api
-from scripts import branch_delete, pr_merge
+from app.commands.model import Command, summary
+from github.model import github_api, parse_pr_parameters
+from github.delete import delete
+from scripts import pr_merge
 from scripts.execute import EXECUTIONS, resolve_execution
 
 
 def _merge(number, sha, repository, ref):
     result = pr_merge.merge_pr(github_api, repository, ref, number, sha)
     print(f"Merged PR #{number}: {result}")
-    _summary(f"Merged PR #{number}\n\nMerge commit: `{result}`\n")
+    summary(f"Merged PR #{number}\n\nMerge commit: `{result}`\n")
     return 0
 
 
 def _delete(number, sha, repository, ref):
     remote = os.environ["GITHUB_SERVER_URL"].rstrip("/") + f"/{repository}.git"
-    result = branch_delete.delete_with_git(
-        github_api, repository, ref, number, sha, remote,
-    )
+    result = delete("branch", api=github_api, repository=repository,
+                    run_ref=ref, number=number, sha=sha, remote=remote)
     print(result)
     return 0
 
@@ -34,14 +34,14 @@ def task(script):
         raise ValueError("Unregistered task or inconsistent task registry.")
     # Validate the file and parameters before running the explicitly selected task.
     resolve_execution(script, os.environ["EXECUTION_INPUTS"])
-    number, sha = branch_delete.parse_parameters(os.environ["EXECUTION_INPUTS"])
+    number, sha = parse_pr_parameters(os.environ["EXECUTION_INPUTS"])
     return TASKS[script](
         number, sha, os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF"],
     )
 
 
 @register("task")
-class TaskCommand:
+class TaskCommand(Command):
     help = "Run one registered task"
 
     @staticmethod

@@ -1,2 +1,2 @@
 # FileRank: C
-tests = ["cli","execution","routing","configuration","registry"]
+tests = ["cli","execution","routing","configuration","registry", "deletion"]

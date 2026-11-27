@@ -14,8 +14,10 @@ def register(name):
             raise ValueError("Invalid suite name.")
         if name in SUITES:
             raise ValueError(f"Duplicate test suite: {name}")
-        if not isinstance(case, type) or not issubclass(case, unittest.TestCase):
-            raise TypeError("Suite must be a unittest.TestCase class.")
+        from tests.suites.model import TestSuite
+
+        if not isinstance(case, type) or not issubclass(case, TestSuite):
+            raise TypeError("Suite must extend TestSuite model.")
         SUITES[name] = case
         return case
     return decorator

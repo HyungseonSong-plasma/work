@@ -1,6 +1,8 @@
 # FileRank: C
 """Explicit registration for trusted CLI commands."""
 
+from inspect import isabstract
+
 from config import load_names
 
 COMMANDS = {}
@@ -9,14 +11,18 @@ COMMANDS = {}
 def register(name):
     """Register one command with a uniform configure/execute interface."""
     def decorator(command):
+        from app.commands.model import Command
+
         if not isinstance(name, str) or not name or name.startswith("-"):
             raise ValueError("Invalid command name.")
         if name in COMMANDS:
             raise ValueError(f"Duplicate command: {name}")
+        if not isinstance(command, type) or not issubclass(command, Command) or isabstract(command):
+            raise TypeError("Command must extend Command model.")
         if not all(callable(getattr(command, attr, None))
                    for attr in ("configure", "execute")):
             raise TypeError("Command requires configure and execute methods.")
-        if not isinstance(getattr(command, "help", None), str):
+        if not isinstance(getattr(command, "help", None), str) or not command.help:
             raise TypeError("Command requires a help string.")
         COMMANDS[name] = command
         return command
