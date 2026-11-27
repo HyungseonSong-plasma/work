@@ -2,15 +2,17 @@
 # work
 work laboratory
 
-The reusable library is now under the canonical `work.libs` import namespace. The source checkout continues to run `python3 -m app` from the repository root; no top-level `libs` compatibility package is provided. ## Framework distribution (development)
+The reusable library is now under the canonical `work.libs` import namespace. The source checkout continues to run `python3 -m app` from the repository root; no top-level `libs` compatibility package is provided.
+
+## Framework distribution (development)
 
 D3 builds the reusable `work-framework` distribution (`0.1.0.dev0`, Python 3.11+). Its wheel and sdist contain the explicitly listed `work` and `work.libs` packages, including both private implementation modules; they do not install the repository application, domain package, TOML policies, tests or YAML workflows. There are no third-party Python runtime dependencies. Real Git transport additionally needs Git and authenticated GitHub CLI where used. No public release or license grant is implied.
 
 From a trusted, reviewed source checkout, build in an independent environment:
 
 ```sh
-python3 -m venv .venv-build
-. .venv-build/bin/activate
+python3 -m venv .venv
+. .venv/bin/activate
 python -m pip install build==1.3.0
 python -m build
 python tests/verification/packaging_probe.py --dist dist
