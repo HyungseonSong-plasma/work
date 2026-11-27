@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
     inputs:
       execution:
-        description: Registered Python script filename (e.g. pr_merge.py)
+        description: Registered scripts in order (e.g. pr_merge.py - branch_delete.py)
         required: true
         type: string
       parameters:
-        description: Execution parameters as a JSON object
+        description: Shared execution parameters as a JSON object
         required: true
         default: '{}'
         type: string
@@ -30,7 +30,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Execute registered Python script
+      - name: Execute registered Python scripts serially
         env:
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
