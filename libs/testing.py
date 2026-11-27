@@ -6,7 +6,8 @@ import inspect
 import textwrap
 import unittest
 from contextlib import nullcontext
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
+from typing import NamedTuple
 
 from libs.frame import (Registry, select_registered, validate_callback,
                         validate_overrides, validate_unique)
@@ -135,7 +136,6 @@ class TestSuite(unittest.TestCase):
 
 
 # Structural regulation of ordinary test declarations.
-RUNNERS = frozenset(("run_cases", "run_contract", "run_scenario"))
 DECLARATION_CALLS = frozenset(("dict", "tuple", "range", "json.dumps"))
 EXPRESSION_NODES = (ast.Constant, ast.Name, ast.Load, ast.Tuple, ast.List,
                     ast.Dict, ast.Set, ast.Attribute, ast.Call, ast.keyword,
@@ -221,55 +221,11 @@ def _collect_declarations(nodes):
     return callbacks, declarations
 
 
-def _validate_runner_call(call, callbacks, declarations):
-    """Check runner-specific argument grammar and exact callback ownership."""
-    runner = call.func.attr
-    keywords = {keyword.arg: keyword.value for keyword in call.keywords}
-    if len(keywords) != len(call.keywords) or None in keywords:
-        raise ValueError("Invalid runner keywords.")
-    used = {"check"}
-    if runner == "run_cases":
-        _validate_cases_call(call, keywords, declarations)
-    elif runner == "run_contract":
-        _validate_contract_call(call, keywords, used)
-    else:
-        _validate_scenario_call(call, declarations, used)
-    if "arrange" in keywords and runner != "run_cases":
-        if not _name(keywords.pop("arrange"), "arrange"):
-            raise ValueError("Use the named arrange callback.")
-        used.add("arrange")
-    if keywords or set(callbacks) != used:
-        raise ValueError("Missing, unused or unexpected runner callbacks.")
-
-
-def _validate_cases_call(call, keywords, declarations):
-    if (len(call.args) != 2 or not _name(call.args[0], "cases")
-            or not _name(call.args[1], "check") or keywords
-            or "cases" not in declarations):
-        raise ValueError("Use self.run_cases(cases, check).")
-
-
-def _validate_contract_call(call, keywords, used):
-    if not call.args and _name(keywords.get("check"), "check"):
-        keywords.pop("check")
-        if "raises" in keywords:
-            raise ValueError("Expected exceptions require split contract form.")
-    elif (len(call.args) == 2 and _name(call.args[0], "act")
-          and _name(call.args[1], "check")):
-        used.add("act")
-    else:
-        raise ValueError("Use run_contract(act, check) or run_contract(check=check).")
-    if "raises" in keywords and not _declaration(keywords.pop("raises")):
-        raise ValueError("Invalid expected exception declaration.")
-
-
-def _validate_scenario_call(call, declarations, used):
-    if (len(call.args) != 2 or not _name(call.args[0], "steps")
-            or not _name(call.args[1], "check") or "steps" not in declarations):
-        raise ValueError("Use self.run_scenario(steps, check).")
-    steps = declarations["steps"]
+def _scenario_callbacks(steps):
+    """Validate named step rows and return their required callback names."""
     if not isinstance(steps, (ast.Tuple, ast.List)) or not steps.elts:
         raise ValueError("Scenario requires an explicit named step table.")
+    used = set()
     for row in steps.elts:
         if (not isinstance(row, ast.Tuple) or len(row.elts) != 2
                 or not isinstance(row.elts[0], ast.Constant)
@@ -277,6 +233,69 @@ def _validate_scenario_call(call, declarations, used):
                 or not isinstance(row.elts[1], ast.Name)):
             raise ValueError("Invalid step declaration.")
         used.add(row.elts[1].id)
+    return used
+
+
+class _RunnerForm(NamedTuple):
+    """One accepted static call form; runtime runner semantics are independent."""
+
+    positional: tuple
+    callbacks: tuple
+    data: str = ""
+    check_keyword: bool = False
+    optional: tuple = ()
+    data_callbacks: object = None
+
+
+# Canonical static grammar. Form selection does not execute a test callback.
+_RUNNER_RULES = MappingProxyType({
+    "run_cases": ("Use self.run_cases(cases, check).", (
+        _RunnerForm(("cases", "check"), ("check",), data="cases"),
+    )),
+    "run_contract": ("Use run_contract(act, check) or run_contract(check=check).", (
+        _RunnerForm((), ("check",), check_keyword=True, optional=("arrange",)),
+        _RunnerForm(("act", "check"), ("act", "check"), optional=("raises", "arrange")),
+    )),
+    "run_scenario": ("Use self.run_scenario(steps, check).", (
+        _RunnerForm(("steps", "check"), ("check",), data="steps",
+                    optional=("arrange",), data_callbacks=_scenario_callbacks),
+    )),
+})
+RUNNERS = frozenset(_RUNNER_RULES)
+
+
+def _validate_runner_call(call, callbacks, declarations):
+    """Apply the declared form, then consume keywords and check callback ownership."""
+    keywords = {keyword.arg: keyword.value for keyword in call.keywords}
+    if len(keywords) != len(call.keywords) or None in keywords:
+        raise ValueError("Invalid runner keywords.")
+    message, forms = _RUNNER_RULES[call.func.attr]
+    for form in forms:
+        if (len(call.args) == len(form.positional)
+                and all(_name(node, name) for node, name in zip(call.args, form.positional))
+                and (not form.check_keyword or _name(keywords.get("check"), "check"))):
+            break
+    else:
+        raise ValueError(message)
+    if (form.data and form.data not in declarations) or (not form.optional and keywords):
+        raise ValueError(message)
+
+    used = set(form.callbacks)
+    if form.check_keyword:
+        keywords.pop("check")
+        if "raises" in keywords:
+            raise ValueError("Expected exceptions require split contract form.")
+    if form.data_callbacks is not None:
+        used.update(form.data_callbacks(declarations[form.data]))
+    if "raises" in form.optional and "raises" in keywords:
+        if not _declaration(keywords.pop("raises")):
+            raise ValueError("Invalid expected exception declaration.")
+    if "arrange" in form.optional and "arrange" in keywords:
+        if not _name(keywords.pop("arrange"), "arrange"):
+            raise ValueError("Use the named arrange callback.")
+        used.add("arrange")
+    if keywords or set(callbacks) != used:
+        raise ValueError("Missing, unused or unexpected runner callbacks.")
 
 
 def validate_method(source):
