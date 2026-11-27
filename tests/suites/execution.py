@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, task as task_command
 from scripts import execute
-from tests.support import PARAMS, REPO, REF, ROOT, SHA
+from tests.fixture import PARAMS, REPO, REF, ROOT, SHA
 from tests.registry import register
 
 

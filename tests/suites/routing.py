@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from github import trigger
 from github.model import WorkflowRegistry
-from tests.support import REPO, REF, event
+from tests.fixture import REPO, REF, event
 from tests.registry import register
 
 
