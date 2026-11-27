@@ -1,0 +1,11 @@
+# FileRank: C
+[actions_policy]
+max_batch = 30
+keep_successful = 1
+protected_workflows = [
+    ".github/workflows/trigger.yml",
+    ".github/workflows/single_run.yml",
+    ".github/workflows/serial_run.yml",
+    ".github/workflows/actions_delete.yml",
+]
+pinned_run_ids = [45989522002, 45983556193]
