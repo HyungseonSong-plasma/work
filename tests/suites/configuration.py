@@ -29,23 +29,30 @@ class ConfigurationContract(TestSuite):
             with self.assertRaises(ValueError):
                 load_names("commands")
 
-    def test_workflow_entries_rejects_unknown_execution(self):
-        with self.assertRaises(ValueError):
-            WorkflowRegistry.from_entries(
-                [{"execution": ["unknown.py"], "workflow": "single_run.yml"}],
-                execution_ids())
-
-    def test_workflow_entries_rejects_duplicate_routes(self):
+    def test_workflow_entries_reject_invalid_routes(self):
         entry = {"execution": ["pr_merge.py"], "workflow": "single_run.yml"}
-        with self.assertRaises(ValueError):
-            WorkflowRegistry.from_entries([entry, entry], execution_ids())
+        cases = (
+            ("unknown_execution", [{"execution": ["unknown.py"], "workflow": "single_run.yml"}]),
+            ("duplicate_route", [entry, dict(entry)]),
+        )
+
+        def check(ctx, entries):
+            self.assert_rejected(WorkflowRegistry.from_entries, entries, execution_ids())
+
+        self.run_cases(cases, check)
 
     def test_deletion_config(self):
         require_deletion("branch")
         require_deletion("actions")
-        for target in ("issue", "unknown"):
-            with self.subTest(target=target):
-                self.assert_rejected(require_deletion, target)
+        cases = (
+            ("issue", "issue"),
+            ("unknown", "unknown"),
+        )
+
+        def check(ctx, target):
+            self.assert_rejected(require_deletion, target)
+
+        self.run_cases(cases, check)
 
     def test_issue_cannot_be_enabled_by_config_alone(self):
         with patch("config.load_registry", return_value={
@@ -53,23 +60,22 @@ class ConfigurationContract(TestSuite):
             with self.assertRaises(ValueError):
                 require_deletion("issue")
 
-
     def test_toml_loader_preserves_array_order(self):
         with self.ctx.registry_root({"commands.toml":
                 '# Registry order\ncommands = ["trigger", "test"]\n'}):
             self.assertEqual(load_names("commands"), ("trigger", "test"))
 
-    def test_toml_loader_rejects_duplicate_keys(self):
-        with self.ctx.registry_root({"commands.toml":
-                'commands = ["trigger"]\ncommands = ["test"]\n'}):
-            with self.assertRaises(ValueError):
-                load_registry("commands")
+    def test_toml_loader_rejects_invalid_documents(self):
+        cases = (
+            ("duplicate_key", 'commands = ["trigger"]\ncommands = ["test"]\n'),
+            ("unexpected_root", 'commands = ["trigger"]\nextra = true\n'),
+        )
 
-    def test_toml_loader_rejects_unexpected_root(self):
-        with self.ctx.registry_root({"commands.toml":
-                'commands = ["trigger"]\nextra = true\n'}):
-            with self.assertRaises(ValueError):
-                load_registry("commands")
+        def check(ctx, content):
+            with ctx.registry_root({"commands.toml": content}):
+                self.assert_rejected(load_registry, "commands")
+
+        self.run_cases(cases, check)
 
     def test_toml_loader_rejects_missing_and_symlink_files(self):
         with self.ctx.registry_root() as root:

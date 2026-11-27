@@ -25,11 +25,17 @@ class RegistryContract(TestSuite):
                          [Second, First])
 
     def test_missing_unknown_and_duplicate_suites_rejected(self):
-        registered = {"cli": RegistryContract}
-        for names in ([], ["unknown"], ["cli", "cli"], ["cli", "unknown"]):
-            with self.subTest(names=names):
-                with self.assertRaises(ValueError):
-                    build_suite(names=names, registered=registered)
+        cases = (
+            ("empty_manifest", []),
+            ("unknown", ["unknown"]),
+            ("duplicate", ["cli", "cli"]),
+            ("extra_unknown", ["cli", "unknown"]),
+        )
+
+        def check(ctx, names):
+            self.assert_rejected(build_suite, names=names, registered={"cli": RegistryContract})
+
+        self.run_cases(cases, check)
 
     def test_duplicate_registration_rejected(self):
         with self.assertRaises(ValueError):
@@ -47,7 +53,6 @@ class RegistryContract(TestSuite):
 
         with self.assertRaises(ValueError):
             build_suite(names=["empty"], registered={"empty": Empty})
-
 
     def test_context_is_fresh_per_test_case(self):
         from tests.suites.model import ActionsTestContext
@@ -90,3 +95,41 @@ class RegistryContract(TestSuite):
                 raise RuntimeError("test cleanup")
         self.assertEqual(config.ROOT, original)
         self.assertFalse(root.exists())
+
+    def test_case_matrix_rejects_empty_invalid_or_duplicate_names(self):
+        check = self.ctx.process()
+        for rows in ((), ((),), (("", 1),), ((1, 2),),
+                     (("same", 1), ("same", 2))):
+            with self.subTest(rows=rows):
+                self.assert_rejected(self.run_cases, rows, check)
+        check.assert_not_called()
+
+    def test_case_matrix_isolates_rows_and_reports_named_failures(self):
+        import unittest
+        from tests.suites.model import ActionsTestContext
+
+        observed = []
+
+        class MatrixFixture(TestSuite):
+            context_type = ActionsTestContext
+
+            def test_matrix(self):
+                def check(ctx, fail):
+                    observed.append(ctx)
+                    self.assertEqual(ctx.run_data["status"], "completed")
+                    ctx.run_data["status"] = "changed"
+                    ctx.remove("example")
+                    if fail:
+                        self.fail("intentional row failure")
+
+                self.run_cases((("first", True), ("second", False)), check)
+
+        result = unittest.TestResult()
+        MatrixFixture("test_matrix").run(result)
+        self.assertEqual(result.testsRun, 1)
+        self.assertEqual(len(result.failures), 1)
+        self.assertEqual(len(result.errors), 0)
+        self.assertIn("case='first'", str(result.failures[0][0]))
+        self.assertEqual(len(observed), 2)
+        self.assertIsNot(observed[0], observed[1])
+        self.assertIsNot(observed[0].remove, observed[1].remove)

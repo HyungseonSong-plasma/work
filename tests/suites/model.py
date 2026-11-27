@@ -141,3 +141,16 @@ class TestSuite(unittest.TestCase):
     def assert_rejected(self, operation, *args, **kwargs):
         with self.assertRaises(ValueError):
             operation(*args, **kwargs)
+
+    def run_cases(self, rows, check):
+        """Run explicitly named rows independently, reporting failures via subTest."""
+        rows = tuple(rows)
+        if not rows or any(not isinstance(row, tuple) or not row or
+                           not isinstance(row[0], str) or not row[0] for row in rows):
+            raise ValueError("Expected nonempty named case rows.")
+        names = [row[0] for row in rows]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate case name.")
+        for name, *values in rows:
+            with self.subTest(case=name):
+                check(self.context_type(), *values)

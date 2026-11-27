@@ -22,31 +22,36 @@ class ExecutionContract(TestSuite):
                     execute_command.execute(True, None)
                 run.assert_not_called()
 
-    def test_single_stage_child_uses_app(self):
-        scripts = resolve_execution("pr_merge.py", PARAMS)
-        run = self.ctx.process()
-        self.assertEqual(execute_command.run_execution(scripts, run=run), 0)
-        run.assert_called_once_with(
-            [sys.executable, "-m", "app", "merge"],
-            cwd=ROOT, check=False)
+    def test_execution_subprocess_contract(self):
+        cases = (
+            ("single_merge", "pr_merge.py", None, 0, ("merge",)),
+            ("serial_fail_fast", "pr_merge.py - branch_delete.py", None, 5, ("merge",)),
+            ("serial_delete_stage", "pr_merge.py - branch_delete.py", 2, 0, ("delete", "branch")),
+        )
 
-    def test_fail_fast(self):
-        scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
-        run = self.ctx.process(5)
-        self.assertEqual(execute_command.run_execution(scripts, run=run), 5)
-        self.assertEqual(run.call_count, 1)
+        def check(ctx, expression, stage, exit_code, expected):
+            executions = resolve_execution(expression, PARAMS)
+            run = ctx.process(exit_code)
+            result = (execute_command.run_execution(executions, run=run) if stage is None
+                      else execute_command.run_stage(executions, stage, run=run))
+            self.assertEqual(result, exit_code)
+            run.assert_called_once_with(
+                [sys.executable, "-m", "app", *expected], cwd=ROOT, check=False)
 
-    def test_serial_stage_selects_only_delete(self):
-        scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
-        run = self.ctx.process()
-        self.assertEqual(execute_command.run_stage(scripts, 2, run=run), 0)
-        self.assertEqual(run.call_args.args[0][-2:], ["delete", "branch"])
-        self.assertEqual(run.call_count, 1)
+        self.run_cases(cases, check)
 
-    def test_pr_parameter_validation(self):
-        with self.ctx.patched_environment(EXECUTION_INPUTS="{}"):
-            with self.assertRaises(ValueError):
-                PRContext("pr_merge.py").validate()
+    def test_pr_context_rejects_invalid_inputs(self):
+        cases = (
+            ("invalid_parameters", {"EXECUTION_INPUTS": "{}"}),
+            ("wrong_event", {"GITHUB_EVENT_NAME": "issue_comment"}),
+            ("rerun", {"GITHUB_RUN_ATTEMPT": "2"}),
+        )
+
+        def check(ctx, changes):
+            with ctx.patched_environment(**changes):
+                self.assert_rejected(PRContext("pr_merge.py").validate)
+
+        self.run_cases(cases, check)
 
     def test_merge_adapter(self):
         with self.ctx.patched_environment():
@@ -64,7 +69,6 @@ class ExecutionContract(TestSuite):
         api.assert_not_called()
         git.assert_not_called()
 
-
     def test_branch_adapter_uses_shared_context(self):
         from app import cli
         with self.ctx.patched_environment():
@@ -80,13 +84,6 @@ class ExecutionContract(TestSuite):
             self.assertEqual(cli.main(["delete", "branch", "--run-id", "12"]), 1)
             call.assert_not_called()
 
-    def test_pr_commands_require_fresh_dispatch(self):
-        for event_name, attempt in (("issue_comment", "1"), ("workflow_dispatch", "2")):
-            with self.ctx.patched_environment(GITHUB_EVENT_NAME=event_name,
-                                              GITHUB_RUN_ATTEMPT=attempt):
-                self.assert_rejected(PRContext("pr_merge.py").validate)
-
-
     def test_context_snapshots_environment(self):
         env = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF}
         ctx = Context(env)
@@ -98,17 +95,24 @@ class ExecutionContract(TestSuite):
         self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
                          ("7", SHA, REPO, REF))
 
-
     def test_execution_identifiers_need_no_physical_scripts(self):
         self.assertFalse((ROOT / "scripts").exists())
         self.assertEqual(resolve_execution("pr_merge.py - branch_delete.py", PARAMS),
                          ("pr_merge.py", "branch_delete.py"))
 
     def test_registry_rejects_unknown_duplicate_reverse_or_path(self):
-        for expression in ("test.py", "pr_merge.py - pr_merge.py",
-                           "branch_delete.py - pr_merge.py", "../pr_merge.py", ""):
-            with self.subTest(expression=expression):
-                self.assert_rejected(resolve_execution, expression, PARAMS)
+        cases = (
+            ("unknown", "test.py"),
+            ("duplicate", "pr_merge.py - pr_merge.py"),
+            ("reverse", "branch_delete.py - pr_merge.py"),
+            ("path", "../pr_merge.py"),
+            ("empty", ""),
+        )
+
+        def check(ctx, expression):
+            self.assert_rejected(resolve_execution, expression, PARAMS)
+
+        self.run_cases(cases, check)
 
     def test_resolution_rejects_missing_command_binding(self):
         from app.registry import COMMANDS
