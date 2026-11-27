@@ -1,25 +1,22 @@
 # FileRank: C
-"""Common offline test-suite model and independent deterministic fixtures."""
+"""Independent project fixtures; expected values are not derived from production policy."""
 
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from copy import deepcopy
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-
-from libs.frame import validate_callback, validate_unique
 
 SHA = "a" * 40
 PARAMS = json.dumps({"pr_number": 7, "expected_head_sha": SHA})
 REPO = "example/work"
 REF = "refs/heads/main"
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestContext:
@@ -136,119 +133,3 @@ class ConfigurationTestContext(TestContext):
                 (root / name).write_text(content, encoding="utf-8")
             with patch("config.ROOT", root):
                 yield root
-
-
-class TestSuite(unittest.TestCase):
-    """Common lifecycle and assertions; concrete suites own test expectations."""
-
-    context_type = TestContext
-
-    def setUp(self):
-        self.ctx = self.context_type()
-
-    def assert_rejected(self, operation, *args, **kwargs):
-        with self.assertRaises(ValueError):
-            operation(*args, **kwargs)
-
-    def run_cases(self, rows, check):
-        """Run explicitly named rows independently, reporting failures via subTest."""
-        try:
-            rows = tuple(rows)
-        except TypeError as error:
-            raise ValueError("Expected named case rows.") from error
-        self._validate_callbacks(check)
-        if not rows or any(not isinstance(row, tuple) or not row or
-                           not isinstance(row[0], str) or not row[0].strip() for row in rows):
-            raise ValueError("Expected nonempty named case rows.")
-        names = [row[0] for row in rows]
-        validate_unique(names, "Duplicate case name.")
-        for _, *values in rows:
-            self._validate_arity(check, 1 + len(values))
-        for name, *values in rows:
-            with self.subTest(case=name):
-                check(self.context_type(), *values)
-
-    def run_contract(self, act=None, check=None, *, arrange=None, raises=None):
-        """Run one action and its checks in a fresh, optionally scoped context.
-
-        An expected exception applies only to act, never setup or check.
-        Arrange, when supplied, returns a non-suppressing context manager.
-        """
-        # Compact form keeps a cohesive operation and its assertions in check(ctx).
-        # Use split form when action/result or expected-exception handling is useful.
-        if act is None:
-            self._validate_callbacks(check, arrange=arrange)
-            if raises is not None:
-                raise ValueError("Expected exceptions require a separate action.")
-            self._validate_arity(check, 1)
-        else:
-            self._validate_callbacks(act, check, arrange=arrange)
-            self._validate_arity(act, 1)
-            self._validate_arity(check, 2)
-        if arrange is not None:
-            self._validate_arity(arrange, 1)
-        if raises is not None and (
-                not isinstance(raises, type) or not issubclass(raises, Exception)):
-            raise ValueError("Expected an exception class.")
-        ctx = self.context_type()
-        completed = False
-        with (nullcontext() if arrange is None else arrange(ctx)):
-            if act is None:
-                check(ctx)
-            else:
-                if raises is None:
-                    result = act(ctx)
-                else:
-                    with self.assertRaises(raises) as error:
-                        act(ctx)
-                    result = error.exception
-                check(ctx, result)
-            completed = True
-        self.assertTrue(completed, "Contract scope suppressed a failure.")
-
-    def run_scenario(self, steps, check, *, arrange=None):
-        """Run ordered named steps and final checks in one fresh context.
-
-        Stop immediately on unexpected failure; annotate the failing step
-        without swallowing it so that the surrounding scope is unwound.
-        """
-        self._validate_callbacks(check, arrange=arrange)
-        self._validate_arity(check, 1)
-        if arrange is not None:
-            self._validate_arity(arrange, 1)
-        try:
-            steps = tuple(steps)
-        except TypeError as error:
-            raise ValueError("Expected named scenario steps.") from error
-        if not steps or any(
-                not isinstance(step, tuple) or len(step) != 2
-                or not isinstance(step[0], str) or not step[0].strip()
-                or not callable(step[1]) for step in steps):
-            raise ValueError("Expected nonempty named callable steps.")
-        names = [name for name, _ in steps]
-        validate_unique(names, "Duplicate scenario step name.")
-        for _, step in steps:
-            self._validate_arity(step, 1)
-        ctx = self.context_type()
-        completed = False
-        with (nullcontext() if arrange is None else arrange(ctx)):
-            for name, step in steps:
-                try:
-                    step(ctx)
-                except Exception as error:
-                    error.add_note(f"Scenario step: {name}")
-                    raise
-            check(ctx)
-            completed = True
-        self.assertTrue(completed, "Scenario scope suppressed a failure.")
-
-    @staticmethod
-    def _validate_callbacks(*callbacks, arrange=None):
-        if not all(callable(callback) for callback in callbacks) or (
-                arrange is not None and not callable(arrange)):
-            raise ValueError("Expected callable runner callbacks.")
-
-    @staticmethod
-    def _validate_arity(callback, count):
-        validate_callback(callback, count, error_type=ValueError,
-                          message="Invalid runner callback signature.")

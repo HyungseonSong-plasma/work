@@ -9,8 +9,9 @@ from github.actions import ActionsContext
 from types import SimpleNamespace
 from github import actions, delete as deletion
 from libs.github import GitHubClient
-from tests.framework.registry import register
-from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
+from tests.wiring import register
+from libs.testing import TestSuite
+from tests.fixtures import ActionsTestContext, REPO, REF, SHA
 from github import trigger
 from app.commands.trigger import route_registry
 from app.wiring import resolve_execution

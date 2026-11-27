@@ -9,12 +9,15 @@ from app import cli
 from app.commands import execute as execute_command
 from app.wiring import COMMANDS, register, workflow_commands
 from libs.command import Command, CommandPlan, local_plan
-from tests.framework.model import TestSuite
-from tests.framework.registry import register as register_suite
+from libs.testing import TestSuite
+from tests.fixtures import TestContext
+from tests.wiring import register as register_suite
 
 
 @register_suite("cli")
 class CliContract(TestSuite):
+    context_type = TestContext
+
     def test_cli_help(self):
         cases = (
             ("root", (), ("trigger", "test")),
@@ -110,7 +113,7 @@ class CliContract(TestSuite):
         )
 
         def check(ctx, successful, expected):
-            with patch("tests.framework.registry.build_suite") as build, \
+            with patch("tests.wiring.build_suite") as build, \
                     patch("app.commands.test.unittest.TextTestRunner") as runner:
                 result = Mock()
                 result.wasSuccessful.return_value = successful
@@ -276,7 +279,7 @@ class CliContract(TestSuite):
         def check(ctx):
             import subprocess
             import sys
-            from tests.framework.model import ROOT
+            from tests.fixtures import ROOT
             code = ("import sys; import libs.command; "
                     "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
                     "for name in sys.modules)")

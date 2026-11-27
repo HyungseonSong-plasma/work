@@ -7,8 +7,9 @@ from github import trigger
 from app.commands.trigger import route_registry
 from app.wiring import resolve_execution
 from libs.github import WorkflowRegistry
-from tests.framework.model import TestSuite, WorkflowTestContext, REPO, REF
-from tests.framework.registry import register
+from libs.testing import TestSuite
+from tests.fixtures import WorkflowTestContext, REPO, REF
+from tests.wiring import register
 
 
 @register("routing")
@@ -252,7 +253,7 @@ class RoutingContract(TestSuite):
         def check(ctx):
             import subprocess
             import sys
-            from tests.framework.model import ROOT
+            from tests.fixtures import ROOT
             code = ("import sys; import libs.github; "
                     "import github.trigger; "
                     "import github.actions; import github.delete; import github.merge; "
@@ -283,7 +284,7 @@ class RoutingContract(TestSuite):
         def check(ctx):
             import subprocess
             import sys
-            from tests.framework.model import ROOT
+            from tests.fixtures import ROOT
             code = ("import sys; import libs.github; "
                     "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
                     "for name in sys.modules)")

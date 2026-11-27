@@ -7,8 +7,9 @@ from app.wiring import configured_commands
 from config import load_names, load_registry, require_deletion
 from libs.github import WorkflowRegistry
 from app.wiring import execution_ids
-from tests.framework.model import TestSuite, ConfigurationTestContext
-from tests.framework.registry import register
+from libs.testing import TestSuite
+from tests.fixtures import ConfigurationTestContext
+from tests.wiring import register
 
 
 @register("configuration")

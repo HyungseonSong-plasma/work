@@ -9,8 +9,9 @@ from unittest.mock import Mock, call, patch
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from libs.workflow import Context, PRContext
 from app.wiring import resolve_execution
-from tests.framework.model import TestSuite, WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
-from tests.framework.registry import register
+from libs.testing import TestSuite
+from tests.fixtures import WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
+from tests.wiring import register
 
 
 @register("execution")
