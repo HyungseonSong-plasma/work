@@ -4,13 +4,16 @@
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from tests.framework.model import TestSuite
-from tests.framework.registry import SUITES, build_suite, register
-from tests.framework.validation import validate_method
+from libs.testing import TestSuite
+from tests.fixtures import TestContext
+from tests.wiring import SUITES, build_suite, register
+from libs.testing import validate_method
 
 
 @register("registry")
 class RegistryContract(TestSuite):
+    context_type = TestContext
+
     def test_manifest_order_and_count(self):
         class First(TestSuite):
             def test_one(self):
@@ -61,7 +64,7 @@ class RegistryContract(TestSuite):
             build_suite(names=["empty"], registered={"empty": Empty})
 
     def test_context_is_fresh_per_test_case(self):
-        from tests.framework.model import ActionsTestContext
+        from tests.fixtures import ActionsTestContext
         class FixtureCase(TestSuite):
             context_type = ActionsTestContext
 
@@ -75,7 +78,7 @@ class RegistryContract(TestSuite):
 
     def test_workflow_fixture_environment_restores_on_error(self):
         import os
-        from tests.framework.model import WorkflowTestContext
+        from tests.fixtures import WorkflowTestContext
         before = dict(os.environ)
         ctx = WorkflowTestContext()
         with self.assertRaises(RuntimeError):
@@ -85,7 +88,7 @@ class RegistryContract(TestSuite):
         self.assertEqual(dict(os.environ), before)
 
     def test_workflow_fixture_returns_independent_events(self):
-        from tests.framework.model import WorkflowTestContext
+        from tests.fixtures import WorkflowTestContext
         ctx = WorkflowTestContext()
         first = ctx.event("pr_merge.py")
         first["sender"]["id"] = 99
@@ -93,7 +96,7 @@ class RegistryContract(TestSuite):
 
     def test_configuration_context_cleans_up_on_error(self):
         import config
-        from tests.framework.model import ConfigurationTestContext
+        from tests.fixtures import ConfigurationTestContext
         original = config.ROOT
         with self.assertRaises(RuntimeError):
             with ConfigurationTestContext().registry_root() as root:
@@ -112,7 +115,7 @@ class RegistryContract(TestSuite):
 
     def test_case_matrix_isolates_rows_and_reports_named_failures(self):
         import unittest
-        from tests.framework.model import ActionsTestContext
+        from tests.fixtures import ActionsTestContext
 
         observed = []
 
@@ -460,7 +463,7 @@ class RegistryContract(TestSuite):
     def test_shared_frame_import_is_domain_independent(self):
         import subprocess
         import sys
-        from tests.framework.model import ROOT
+        from tests.fixtures import ROOT
         code = ("import sys; import libs.frame; "
                 "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
                 "for name in sys.modules)")
@@ -535,3 +538,79 @@ class RegistryContract(TestSuite):
                     return None
         with self.assertRaises(TypeError):
             Frame(contract, ())
+
+    def test_testing_library_import_is_domain_independent(self):
+        import subprocess
+        import sys
+        from tests.fixtures import ROOT
+        code = ("import sys; import libs.testing; "
+                "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
+                "for name in sys.modules)")
+        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((ROOT / "tests" / "framework").exists())
+
+    def test_suite_registry_isolated_and_default_context_is_generic(self):
+        from libs.testing import SuiteRegistry
+        first, second = SuiteRegistry(), SuiteRegistry()
+
+        @first.register("one")
+        class One(TestSuite):
+            def test_one(self):
+                def check(ctx):
+                    pass
+                self.run_contract(check=check)
+
+        second.register("two")(One)
+        self.assertEqual(list(first), ["one"])
+        self.assertEqual(list(second), ["two"])
+        self.assertEqual(first.build(("one",)).countTestCases(), 1)
+        self.assert_rejected(first.build, ("two",))
+        self.assert_rejected(second.build, ("one", "two"))
+        contexts = []
+        instance = One()
+        instance.run_cases((("one",), ("two",)), lambda ctx: contexts.append(ctx))
+        self.assertIsNot(contexts[0], contexts[1])
+        contexts[0].marker = "changed"
+        self.assertFalse(hasattr(contexts[1], "marker"))
+        self.assertFalse(hasattr(contexts[0], "cli_help"))
+
+    def test_suite_self_test_exemption_requires_exact_pair(self):
+        from libs.testing import SuiteRegistry
+        registry = SuiteRegistry()
+
+        class Direct(TestSuite):
+            def test_direct(self):
+                self.assertTrue(True)
+
+        class Other(Direct):
+            pass
+
+        registry.register("registry")(Direct)
+        self.assert_rejected(registry.build, ("registry",))
+        self.assert_rejected(registry.build, ("registry",), self_test=("other", Direct))
+        self.assert_rejected(registry.build, ("registry",), self_test=("registry", Other))
+        self.assertEqual(registry.build(("registry",), self_test=("registry", Direct)).countTestCases(), 1)
+        self.assert_rejected(build_suite, names=("registry",), registered={"registry": Direct})
+        self.assert_rejected(build_suite, names=("other",), registered={"other": RegistryContract})
+        suite = build_suite(names=("registry",), registered={"registry": RegistryContract})
+        self.assertGreater(suite.countTestCases(), 0)
+
+    def test_suite_loader_coverage_remains_required_for_exempt_class(self):
+        import unittest
+        from libs.testing import SuiteRegistry
+
+        class Direct(TestSuite):
+            def test_first(self):
+                pass
+
+            def test_second(self):
+                pass
+
+        registry = SuiteRegistry()
+        registry.register("registry")(Direct)
+        loader = Mock()
+        loader.loadTestsFromTestCase.return_value = unittest.TestSuite([Direct("test_first")])
+        with self.assertRaisesRegex(ValueError, "Unexpected test loader coverage"):
+            registry.build(("registry",), loader=loader, self_test=("registry", Direct))

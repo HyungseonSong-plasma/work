@@ -10,7 +10,7 @@ from libs.command import Command, local_plan
 def action(ctx, args):
     # Load test implementations only for this command, not workflow execution.
     from tests import suites
-    from tests.framework.registry import build_suite
+    from tests.wiring import build_suite
 
     result = unittest.TextTestRunner(verbosity=2).run(build_suite())
     return 0 if result.wasSuccessful() else 1
