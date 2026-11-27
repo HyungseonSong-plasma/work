@@ -2,7 +2,28 @@
 # work
 work laboratory
 
-The reusable library is now under the canonical `work.libs` import namespace. The source checkout continues to run `python3 -m app` from the repository root; no top-level `libs` compatibility package is provided. Installed distribution and `src/` layout are separate packaging steps.
+The reusable library is now under the canonical `work.libs` import namespace. The source checkout continues to run `python3 -m app` from the repository root; no top-level `libs` compatibility package is provided. ## Framework distribution (development)
+
+D3 builds the reusable `work-framework` distribution (`0.1.0.dev0`, Python 3.11+). Its wheel and sdist contain the explicitly listed `work` and `work.libs` packages, including both private implementation modules; they do not install the repository application, domain package, TOML policies, tests or YAML workflows. There are no third-party Python runtime dependencies. Real Git transport additionally needs Git and authenticated GitHub CLI where used. No public release or license grant is implied.
+
+From a trusted, reviewed source checkout, build in an independent environment:
+
+```sh
+python3 -m venv .venv-build
+. .venv-build/bin/activate
+python -m pip install build==1.3.0
+python -m build
+python tests/verification/packaging_probe.py --dist dist
+```
+
+The PEP 517 backend is pinned in `pyproject.toml`; build isolation may fetch that backend. Use a trusted package index or a reviewed offline wheelhouse (PIP_NO_INDEX and PIP_FIND_LINKS). Verify artifact hashes against the reviewed build evidence, then install the wheel into a consumer virtual environment outside this checkout:
+
+```sh
+python -m pip install --no-deps /absolute/path/work_framework-0.1.0.dev0-py3-none-any.whl
+python -c 'from work.libs.frame import FrameContract; print(FrameContract(("action",)).bind(action=lambda x: x + 1).execute(1))'
+```
+
+The smoke probe builds (unless artifacts are supplied), checks archive contents and source bytes, and installs the wheel and sdist independently in clean environments outside the repository. Source checkouts can shadow an installed package; verify the installed module path outside the checkout. The physical `src/work` move is deferred until the application bootstrap and trusted workflow execution paths can be migrated together in D4. No path injection or compatibility alias is added. Existing `python3 -m app` and operation workflows still use the trusted source checkout. The installed framework has no CLI entrypoint or project policy resources. Distribution naming, licensing and the stable release contract remain subject to review.
 
 ## Execution
 

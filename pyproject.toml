@@ -1,0 +1,15 @@
+# FileRank: C
+[build-system]
+requires = ["setuptools==82.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "work-framework"
+version = "0.1.0.dev0"
+description = "Explicit registries and regulated Python execution and test lifecycles."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools]
+packages = ["work", "work.libs"]
+include-package-data = false
