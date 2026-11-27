@@ -48,7 +48,7 @@ jobs:
   delete:
     name: Delete
     needs: merge
-    if: ${{ needs.merge.result == 'success' }}
+    if: ${{ needs.merge.result == 'success' && github.run_attempt == '1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
