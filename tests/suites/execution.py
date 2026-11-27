@@ -456,3 +456,46 @@ class ExecutionContract(TestSuite):
             self.assertEqual(trace.mock_calls, expected)
 
         self.run_cases(cases, check)
+
+    def test_context_plan_shared_preflight_validation_and_status(self):
+        cases = (("success", None), ("preflight", "preflight"),
+                 ("prepare", "prepare"), ("validate", "validate"),
+                 ("action", "action"), ("report", "report"))
+
+        def check(ctx, failure):
+            from libs.workflow import context_plan
+            from libs.command import Command
+            from unittest.mock import call
+            trace = Mock()
+            args, validated, result = object(), object(), object()
+            context = Mock()
+            context.validate.return_value = validated
+            error = ValueError("stopped")
+            preflight = Mock(side_effect=error if failure == "preflight" else None)
+            prepare = Mock(return_value=context, side_effect=error if failure == "prepare" else None)
+            context.validate.side_effect = error if failure == "validate" else None
+            action = Mock(return_value=result, side_effect=error if failure == "action" else None)
+            report = Mock(side_effect=error if failure == "report" else None)
+            for name, callback in (("preflight", preflight), ("prepare", prepare),
+                                   ("validate", context.validate), ("action", action),
+                                   ("report", report)):
+                trace.attach_mock(callback, name)
+
+            class Sample(Command):
+                help = "Context plan"
+                plan = context_plan(prepare, action, preflight=preflight,
+                                    report=report, returns_status=True)
+
+            if failure:
+                with self.assertRaises(ValueError) as caught:
+                    Sample.execute(args)
+                self.assertIs(caught.exception, error)
+            else:
+                self.assertIs(Sample.execute(args), result)
+            expected = [call.preflight(args), call.prepare(args), call.validate(),
+                        call.action(validated, args), call.report(validated, result)]
+            stages = ("preflight", "prepare", "validate", "action", "report")
+            self.assertEqual(trace.mock_calls,
+                             expected if not failure else expected[:stages.index(failure) + 1])
+
+        self.run_cases(cases, check)

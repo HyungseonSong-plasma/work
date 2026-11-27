@@ -1,6 +1,7 @@
 # FileRank: C
 """Domain-independent registered command plans and regulated CLI lifecycle."""
 
+import argparse
 from dataclasses import dataclass
 
 from libs.frame import (FrameContract, Registry, select_registered,
@@ -91,6 +92,20 @@ def validate_command(command):
         validate_unique(names, "Duplicate command target.", error_type=TypeError)
     elif type(command.plan) is not CommandPlan:
         raise TypeError("Command requires a lifecycle plan.")
+
+
+def run_cli(prog, configured, argv=None, *, errors, handle_error):
+    """Own parser binding and dispatch; handle only declared execution failures."""
+    parser = argparse.ArgumentParser(prog=prog)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    registered = configured()
+    for name, command in registered.items():
+        command.bind(subparsers, name)
+    args = parser.parse_args(argv)
+    try:
+        return registered[args.command].execute(args)
+    except errors as error:
+        return handle_error(args.command, error)
 
 
 def local_plan(action):

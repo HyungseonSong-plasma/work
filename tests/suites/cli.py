@@ -346,3 +346,84 @@ class CliContract(TestSuite):
             self.assertEqual(trace.mock_calls, expected)
 
         self.run_cases(cases, check)
+
+    def test_cli_runner_error_scope_and_selection(self):
+        cases = (
+            ("success", None, 7),
+            ("configured_failure", "configured", None),
+            ("bind_failure", "bind", None),
+            ("parse_failure", "parse", None),
+            ("execution_failure", "execute", 9),
+            ("undeclared_failure", "undeclared", None),
+            ("handler_failure", "handler", None),
+        )
+
+        def check(ctx, failure, expected):
+            from libs.command import run_cli, CommandRegistry
+            from unittest.mock import call
+            trace = Mock()
+            configured_error = ValueError("configuration")
+            bind_error = ValueError("binding")
+            execute_error = ValueError("execution")
+            undeclared_error = RuntimeError("unexpected")
+            handler_error = LookupError("handler")
+
+            def action(context, args):
+                trace.action(args.command)
+                if failure in ("execute", "handler"):
+                    raise execute_error
+                if failure == "undeclared":
+                    raise undeclared_error
+                return 7
+
+            class Sample(Command):
+                help = "Sample"
+                plan = local_plan(action)
+
+                @staticmethod
+                def configure(parser):
+                    trace.bind()
+                    if failure == "bind":
+                        raise bind_error
+
+            registry = CommandRegistry()
+            registry.register("sample")(Sample)
+
+            def configured():
+                trace.configured()
+                if failure == "configured":
+                    raise configured_error
+                return registry.configured(("sample",))
+
+            def handle(name, error):
+                trace.handle(name, error)
+                if failure == "handler":
+                    raise handler_error
+                return 9
+
+            argv = ["unknown"] if failure == "parse" else ["sample"]
+            def invoke():
+                return run_cli("fixture", configured, argv, errors=(ValueError,),
+                               handle_error=handle)
+            if failure == "parse":
+                with self.assertRaises(SystemExit) as caught:
+                    invoke()
+                self.assertEqual(caught.exception.code, 2)
+            elif expected is None:
+                error = {"configured": configured_error, "bind": bind_error,
+                         "undeclared": undeclared_error, "handler": handler_error}[failure]
+                with self.assertRaises(type(error)) as caught:
+                    invoke()
+                self.assertIs(caught.exception, error)
+            else:
+                self.assertEqual(invoke(), expected)
+            calls = [call.configured()]
+            if failure != "configured":
+                calls.append(call.bind())
+            if failure not in ("configured", "bind", "parse"):
+                calls.append(call.action("sample"))
+            if failure in ("execute", "handler"):
+                calls.append(call.handle("sample", execute_error))
+            self.assertEqual(trace.mock_calls, calls)
+
+        self.run_cases(cases, check)

@@ -90,20 +90,33 @@ class PRContext(Context):
         return self
 
 
+def _validate_context(ctx, args):
+    return ctx.validate()
+
+
+def context_plan(prepare, action, *, validate=_validate_context,
+                 preflight=None, report=None, returns_status=False):
+    """Compose a context factory and validator with the common command runner."""
+    if preflight is not None:
+        def prepare_context(args):
+            preflight(args)
+            return prepare(args)
+    else:
+        prepare_context = prepare
+    return CommandPlan(prepare_context, validate, action, report, returns_status)
+
+
 def workflow_plan(event, action, *, validate=_identity, report=None, returns_status=False):
     """Require the expected event and first attempt before command validation."""
     def verify(ctx, args):
         ctx.require_event(event, fresh=True)
         return validate(ctx, args)
 
-    return CommandPlan(lambda args: Context(), verify, action, report, returns_status)
+    return context_plan(lambda args: Context(), action, validate=verify,
+                        report=report, returns_status=returns_status)
 
 
 def pr_plan(execution, action, *, resolve, preflight=None, report=None):
     """Enforce PR context validation, including fixed execution identifier."""
-    def prepare(args):
-        if preflight is not None:
-            preflight(args)
-        return PRContext(execution, resolve=resolve)
-
-    return CommandPlan(prepare, lambda ctx, args: ctx.validate(), action, report)
+    return context_plan(lambda args: PRContext(execution, resolve=resolve), action,
+                        preflight=preflight, report=report)
