@@ -55,3 +55,5 @@ These commands consume the existing GitHub event and execution environment varia
 `app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, and explicitly import the module in `app/commands/__init__.py`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
 
 Run offline regression tests with `python3 -m unittest discover -s tests -v`.
+
+For an end-to-end CLI regression check, use a reviewed documentation-only PR and submit the existing serial execution command. Confirm that Trigger submits exactly one Serial Run, Merge completes before Delete starts, the PR is merged, and its unchanged head branch is absent. Inspect the run logs rather than relying only on the workflow conclusion.
