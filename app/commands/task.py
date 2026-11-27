@@ -30,7 +30,7 @@ TASKS = {"pr_merge.py": _merge, "branch_delete.py": _delete}
 
 
 def task(script):
-    if set(TASKS) != EXECUTIONS or script not in TASKS:
+    if not EXECUTIONS.issubset(TASKS) or script not in EXECUTIONS:
         raise ValueError("Unregistered task or inconsistent task registry.")
     # Validate the file and parameters before running the explicitly selected task.
     resolve_execution(script, os.environ["EXECUTION_INPUTS"])

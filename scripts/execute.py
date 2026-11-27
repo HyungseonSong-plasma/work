@@ -6,8 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Adding a script here grants it the workflow's permissions.
-EXECUTIONS = frozenset({"pr_merge.py", "branch_delete.py"})
+from config import load_names
+
+# Configuration is an allowlist, not an implementation or permission grant.
+EXECUTIONS = frozenset(load_names("executions"))
 
 
 def resolve_execution(expression, parameters):

@@ -1,0 +1,21 @@
+[
+    {
+        "execution": [
+            "pr_merge.py"
+        ],
+        "workflow": "single_run.yml"
+    },
+    {
+        "execution": [
+            "branch_delete.py"
+        ],
+        "workflow": "single_run.yml"
+    },
+    {
+        "execution": [
+            "pr_merge.py",
+            "branch_delete.py"
+        ],
+        "workflow": "serial_run.yml"
+    }
+]
