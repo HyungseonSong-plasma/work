@@ -21,7 +21,7 @@ class RegistryContract(unittest.TestCase):
         suite = build_suite(names=["second", "first"],
                             registered={"first": First, "second": Second})
         self.assertEqual(suite.countTestCases(), 2)
-        self.assertEqual([next(iter(group)).__class__ for group in suite],
+        self.assertEqual([case.__class__ for case in suite],
                          [Second, First])
 
     def test_missing_unknown_and_duplicate_suites_rejected(self):
