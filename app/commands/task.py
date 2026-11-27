@@ -4,7 +4,7 @@
 import os
 
 from app.registry import register
-from app.commands._summary import _summary
+from app.commands.model import Command, summary
 from github.model import github_api
 from scripts import branch_delete, pr_merge
 from scripts.execute import EXECUTIONS, resolve_execution
@@ -13,7 +13,7 @@ from scripts.execute import EXECUTIONS, resolve_execution
 def _merge(number, sha, repository, ref):
     result = pr_merge.merge_pr(github_api, repository, ref, number, sha)
     print(f"Merged PR #{number}: {result}")
-    _summary(f"Merged PR #{number}\n\nMerge commit: `{result}`\n")
+    summary(f"Merged PR #{number}\n\nMerge commit: `{result}`\n")
     return 0
 
 
@@ -41,7 +41,7 @@ def task(script):
 
 
 @register("task")
-class TaskCommand:
+class TaskCommand(Command):
     help = "Run one registered task"
 
     @staticmethod

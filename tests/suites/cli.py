@@ -9,12 +9,13 @@ from unittest.mock import Mock, patch
 from app import cli
 from app.commands import execute as execute_command
 from app.registry import COMMANDS, register
-from tests.fixture import ROOT
+from app.commands.model import Command
+from tests.suites.model import TestSuite, ROOT
 from tests.registry import register as register_suite
 
 
 @register_suite("cli")
-class CliContract(unittest.TestCase):
+class CliContract(TestSuite):
     def test_help_starts_real_module(self):
         result = subprocess.run([sys.executable, "-m", "app", "--help"],
                                 cwd=ROOT, capture_output=True, text=True)
@@ -40,7 +41,7 @@ class CliContract(unittest.TestCase):
     def test_registered_command_extends_cli_without_branch(self):
         with patch.dict(COMMANDS):
             @register("sample")
-            class SampleCommand:
+            class SampleCommand(Command):
                 help = "Test-only command"
 
                 @staticmethod

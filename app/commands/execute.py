@@ -4,6 +4,7 @@
 import os
 
 from app.registry import register
+from app.commands.model import Command
 from scripts.execute import resolve_execution, run_execution, run_stage
 
 
@@ -21,7 +22,7 @@ def execute(single, stage):
 
 
 @register("execute")
-class ExecuteCommand:
+class ExecuteCommand(Command):
     help = "Run validated execution stages"
 
     @staticmethod

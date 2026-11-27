@@ -4,17 +4,18 @@
 import unittest
 from unittest.mock import patch
 
+from tests.suites.model import TestSuite
 from tests.registry import SUITES, build_suite, register
 
 
 @register("registry")
-class RegistryContract(unittest.TestCase):
+class RegistryContract(TestSuite):
     def test_manifest_order_and_count(self):
-        class First(unittest.TestCase):
+        class First(TestSuite):
             def test_one(self):
                 pass
 
-        class Second(unittest.TestCase):
+        class Second(TestSuite):
             def test_two(self):
                 pass
 
@@ -42,7 +43,7 @@ class RegistryContract(unittest.TestCase):
             self.assertNotIn("invalid", SUITES)
 
     def test_empty_suite_rejected(self):
-        class Empty(unittest.TestCase):
+        class Empty(TestSuite):
             pass
 
         with self.assertRaises(ValueError):

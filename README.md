@@ -53,7 +53,7 @@ These commands consume the existing GitHub event and execution environment varia
 
 ### Adding CLI commands
 
-`app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.toml`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
+`app/cli.py` is a generic parser and dispatcher. To add a command, define a subclass of `Command` from `app/commands/model.py` in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.toml`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
 
 Run offline regression tests with `python3 -m app test`.
 
@@ -73,6 +73,8 @@ For TOML registry regression verification, confirm that the worker and Trigger u
 
 ### Test registry
 
-The offline test suite uses `config/tests.toml` as its ordered manifest. Each `tests/suites/` module registers a `unittest.TestCase` class with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared fixtures live in `tests/fixture.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
+The offline test suite uses `config/tests.toml` as its ordered manifest. Each `tests/suites/` module registers a subclass of `TestSuite` from `tests/suites/model.py` with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared deterministic fixtures and common contract helpers live in `tests/suites/model.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
 
 Verify the TOML serial route with a documentation-only PR on the post-migration default branch; confirm both job conclusions and actual branch removal.
+
+The command model supplies the default argument configuration, abstract execute contract and shared summary reporting. Registries remain responsible for explicit registration, manifest loading and validation, not implementation details.

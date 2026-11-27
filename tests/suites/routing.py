@@ -6,12 +6,12 @@ from unittest.mock import Mock, patch
 
 from github import trigger
 from github.model import WorkflowRegistry
-from tests.fixture import REPO, REF, event
+from tests.suites.model import TestSuite, REPO, REF, event
 from tests.registry import register
 
 
 @register("routing")
-class RoutingContract(unittest.TestCase):
+class RoutingContract(TestSuite):
     def test_routing_dispatches_only_one_workflow(self):
         for expression, expected in (
             ("pr_merge.py", "single_run.yml"),
