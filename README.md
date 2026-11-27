@@ -36,7 +36,7 @@ Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submissio
 
 ### GitHub integration
 
-The canonical `github/framework/` package provides shared validation contracts (`model.py`), REST transport (`transport.py`) and an ordered `WorkflowRegistry` (`registry.py`). `github/trigger.py` loads the supported workflow routes from `config/workflows.toml`, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `github/` contains GitHub operations; `app/commands/execute.py` runs isolated command subprocesses. Legacy `.py` execution identifiers are protocol strings only; no scripts directory or marker files are required. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
+The canonical `github/framework/` package provides shared validation contracts (`model.py`), REST transport (`transport.py`) and an ordered `WorkflowRegistry` (`registry.py`). `app/commands/trigger.py` eagerly composes the trusted route registry from `config/workflows.toml` and the application execution resolver. `github/trigger.py` receives these explicitly, validates GitHub PR comments, and dispatches exactly one matching workflow. GitHub domain modules do not import the application layer. The root `app/` package provides the only command-line entry point; `github/` contains GitHub operations; `app/commands/execute.py` runs isolated command subprocesses. Legacy `.py` execution identifiers are protocol strings only; no scripts directory or marker files are required. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
 
 ### Unified CLI
 

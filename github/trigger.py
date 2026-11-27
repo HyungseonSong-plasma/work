@@ -3,16 +3,10 @@
 
 import json
 
-from config import load_registry
 from github.actions import actions_request
-from github.framework.registry import WorkflowRegistry
 from github.framework.transport import dispatch_workflow
 from github.framework.model import (validate_sha, validate_pr_number, require_default_ref,
                                     parse_execute_comment)
-from app.framework.registry import execution_ids, resolve_execution
-
-
-registry = WorkflowRegistry.from_entries(load_registry("workflows"), execution_ids())
 
 
 def owner_comment(event):
@@ -77,7 +71,7 @@ def route_actions(event, default, request_id, request):
     }
 
 
-def route(event, repository, ref):
+def route(event, repository, ref, *, routes, resolve):
     if event["repository"]["full_name"] != repository:
         raise ValueError("Request repository mismatch.")
     default = event["repository"]["default_branch"]
@@ -90,8 +84,8 @@ def route(event, repository, ref):
     if isinstance(request, dict) and request.get("execution") == "delete actions":
         return route_actions(event, default, request_id, request)
     execution, parameters = _comment_parameters(event, request)
-    executions = resolve_execution(execution, parameters)
-    workflow = registry.resolve(executions)
+    executions = resolve(execution, parameters)
+    workflow = routes.resolve(executions)
     return workflow, {
         "ref": default,
         "inputs": {
@@ -102,8 +96,8 @@ def route(event, repository, ref):
     }
 
 
-def dispatch_request(event, repository, ref, dispatch=dispatch_workflow):
+def dispatch_request(event, repository, ref, dispatch=dispatch_workflow, *, routes, resolve):
     """Validate and submit exactly one matching workflow."""
-    workflow, payload = route(event, repository, ref)
+    workflow, payload = route(event, repository, ref, routes=routes, resolve=resolve)
     dispatch(repository, workflow, payload)
     return workflow, payload["inputs"]["request_id"]

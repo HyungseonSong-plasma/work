@@ -1,9 +1,19 @@
 # FileRank: C
 """Trigger command and its workflow adapter."""
 
-from app.framework.registry import register
+from functools import partial
+
+from config import load_registry
+from app.framework.registry import register, execution_ids, resolve_execution
 from app.framework.model import Command, workflow_plan
-from github.trigger import dispatch_request
+from github import trigger
+from github.framework.registry import WorkflowRegistry
+
+
+# Trusted composition root: preserve eager route validation on CLI module loading.
+route_registry = WorkflowRegistry.from_entries(load_registry("workflows"), execution_ids())
+dispatch_request = partial(trigger.dispatch_request, routes=route_registry,
+                           resolve=resolve_execution)
 
 
 def action(ctx, args):

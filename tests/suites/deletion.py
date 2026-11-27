@@ -12,6 +12,8 @@ from github.framework.transport import delete_resource
 from tests.framework.registry import register
 from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
+from app.commands.trigger import route_registry
+from app.framework.registry import resolve_execution
 
 
 @register("deletion")
@@ -189,7 +191,8 @@ class DeletionContract(TestSuite):
             request["comment"].update(created_at="now", updated_at="now",
                 body="/execute " + json.dumps({"execution": "delete actions", "runs": targets}))
             dispatch = Mock()
-            self.assertEqual(trigger.dispatch_request(request, REPO, REF, dispatch),
+            self.assertEqual(trigger.dispatch_request(request, REPO, REF, dispatch,
+                                         routes=route_registry, resolve=resolve_execution),
                              ("actions_delete.yml", "comment-12"))
             dispatch.assert_called_once()
             self.assertEqual(json.loads(dispatch.call_args.args[2]["inputs"]["runs"]), targets)
@@ -243,7 +246,8 @@ class DeletionContract(TestSuite):
                 "execution": "delete actions", "run_id": 12,
                 "expected_head_sha": SHA, "expected_run_attempt": 1})
             dispatch = Mock()
-            workflow, request_id = trigger.dispatch_request(request, REPO, REF, dispatch)
+            workflow, request_id = trigger.dispatch_request(request, REPO, REF, dispatch,
+                                         routes=route_registry, resolve=resolve_execution)
             self.assertEqual((workflow, request_id), ("actions_delete.yml", "comment-12"))
             dispatch.assert_called_once_with(REPO, workflow, {
                 "ref": "main", "inputs": {"run_id": "12", "expected_head_sha": SHA,
@@ -265,7 +269,8 @@ class DeletionContract(TestSuite):
             body = dict(ctx.target(), execution="delete actions")
             request["comment"]["body"] = "/execute " + json.dumps(dict(body, **changes))
             dispatch = Mock()
-            self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch)
+            self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch,
+                                 routes=route_registry, resolve=resolve_execution)
             dispatch.assert_not_called()
 
         self.run_cases(cases, check)
