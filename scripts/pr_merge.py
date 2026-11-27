@@ -69,13 +69,20 @@ def merge_pr(api, repository, ref, pr_number, expected_head_sha):
 
 def main():
     try:
-        number = os.environ["PR_NUMBER"]
+        parameters = json.loads(os.environ["EXECUTION_INPUTS"])
+        if not isinstance(parameters, dict) or set(parameters) != {"pr_number", "expected_head_sha"}:
+            raise ValueError("Provide pr_number and expected_head_sha only.")
+        number = parameters["pr_number"]
+        if type(number) is int:
+            number = str(number)
+        if not isinstance(number, str) or not isinstance(parameters["expected_head_sha"], str):
+            raise ValueError("Invalid parameter types.")
         sha = merge_pr(
             github_api,
             os.environ["GITHUB_REPOSITORY"],
             os.environ["GITHUB_REF"],
             number,
-            os.environ["EXPECTED_HEAD_SHA"],
+            parameters["expected_head_sha"],
         )
     except HTTPError as error:
         print(f"GitHub API request failed: HTTP {error.code}", file=sys.stderr)
