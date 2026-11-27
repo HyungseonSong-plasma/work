@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: e1d08eb6f3c96817441cc4fb00848b39af6ce704
+          ref: a503f51d0d91fe8883ad58b8b0ed381929d396f3
           path: candidate
           persist-credentials: false
       - name: Verify exact snapshots and comparator self-tests
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C baseline rev-parse HEAD)" = "85da5072053d1765bcdc2c0888fce1e4ccb79d3b"
-          test "$(git -C candidate rev-parse HEAD)" = "e1d08eb6f3c96817441cc4fb00848b39af6ce704"
+          test "$(git -C candidate rev-parse HEAD)" = "a503f51d0d91fe8883ad58b8b0ed381929d396f3"
           for path in src .github/workflows pyproject.toml MANIFEST.in; do
             test "$(git -C baseline rev-parse HEAD:$path)" = "$(git -C candidate rev-parse HEAD:$path)"
           done
@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           cd candidate
-          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha 85da5072053d1765bcdc2c0888fce1e4ccb79d3b --candidate . --candidate-sha e1d08eb6f3c96817441cc4fb00848b39af6ce704
+          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha 85da5072053d1765bcdc2c0888fce1e4ccb79d3b --candidate . --candidate-sha a503f51d0d91fe8883ad58b8b0ed381929d396f3
       - name: Isolated distribution integrity and install QA
         shell: bash
         run: |
