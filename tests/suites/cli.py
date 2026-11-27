@@ -277,14 +277,9 @@ class CliContract(TestSuite):
 
     def test_command_library_import_is_domain_independent(self):
         def check(ctx):
-            import subprocess
-            import sys
-            from tests.fixtures import ROOT
-            code = ("import sys; import libs.command; "
-                    "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
-                    "for name in sys.modules)")
-            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                    capture_output=True, text=True)
+            from tests.fixtures import import_probe
+            result = import_probe(("libs.command",),
+                                  ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)

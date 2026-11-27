@@ -5,11 +5,21 @@ import ast
 import inspect
 import textwrap
 import unittest
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 
 from libs.frame import (Registry, select_registered, validate_callback,
                         validate_overrides, validate_unique)
+
+
+@contextmanager
+def _runner_scope(suite, arrange, kind):
+    ctx = suite.context_type()
+    completed = False
+    with (nullcontext() if arrange is None else arrange(ctx)):
+        yield ctx
+        completed = True
+    suite.assertTrue(completed, f"{kind} scope suppressed a failure.")
 
 
 class TestSuite(unittest.TestCase):
@@ -64,9 +74,7 @@ class TestSuite(unittest.TestCase):
         if raises is not None and (
                 not isinstance(raises, type) or not issubclass(raises, Exception)):
             raise ValueError("Expected an exception class.")
-        ctx = self.context_type()
-        completed = False
-        with (nullcontext() if arrange is None else arrange(ctx)):
+        with _runner_scope(self, arrange, "Contract") as ctx:
             if act is None:
                 check(ctx)
             else:
@@ -77,8 +85,6 @@ class TestSuite(unittest.TestCase):
                         act(ctx)
                     result = error.exception
                 check(ctx, result)
-            completed = True
-        self.assertTrue(completed, "Contract scope suppressed a failure.")
 
     def run_scenario(self, steps, check, *, arrange=None):
         """Run ordered named steps and final checks in one fresh context.
@@ -103,9 +109,7 @@ class TestSuite(unittest.TestCase):
         validate_unique(names, "Duplicate scenario step name.")
         for _, step in steps:
             self._validate_arity(step, 1)
-        ctx = self.context_type()
-        completed = False
-        with (nullcontext() if arrange is None else arrange(ctx)):
+        with _runner_scope(self, arrange, "Scenario") as ctx:
             for name, step in steps:
                 try:
                     step(ctx)
@@ -113,8 +117,6 @@ class TestSuite(unittest.TestCase):
                     error.add_note(f"Scenario step: {name}")
                     raise
             check(ctx)
-            completed = True
-        self.assertTrue(completed, "Scenario scope suppressed a failure.")
 
     @staticmethod
     def _validate_callbacks(*callbacks, arrange=None):

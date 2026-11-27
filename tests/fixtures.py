@@ -19,6 +19,15 @@ REF = "refs/heads/main"
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Expectations remain explicit at each call site.
+def import_probe(modules, forbidden):
+    code = ("import sys; import " + ", ".join(modules) + "; "
+            "assert not any(n == p or n.startswith(p + '.') "
+            "for n in sys.modules for p in " + repr(tuple(forbidden)) + ")")
+    return subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                          capture_output=True, text=True)
+
+
 class TestContext:
     """Fresh per-test context; no production policy or registry-derived expectations."""
 

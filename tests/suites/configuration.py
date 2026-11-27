@@ -193,14 +193,8 @@ class ConfigurationContract(TestSuite):
         )
 
         def check(ctx, modules, forbidden):
-            import subprocess
-            import sys
-            from tests.fixtures import ROOT
-            code = ("import sys; import " + modules + "; "
-                    "assert not any(n == p or n.startswith(p + '.') "
-                    "for n in sys.modules for p in " + repr(forbidden) + ")")
-            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                    capture_output=True, text=True)
+            from tests.fixtures import import_probe
+            result = import_probe(modules.split(", "), forbidden)
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_cases(cases, check)

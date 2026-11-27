@@ -251,15 +251,9 @@ class RoutingContract(TestSuite):
 
     def test_domain_imports_without_application_layer(self):
         def check(ctx):
-            import subprocess
-            import sys
-            from tests.fixtures import ROOT
-            code = ("import sys; import libs.github; "
-                    "import github.trigger; "
-                    "import github.actions; import github.delete; import github.merge; "
-                    "assert not any(name == 'app' or name.startswith('app.') for name in sys.modules)")
-            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                    capture_output=True, text=True)
+            from tests.fixtures import import_probe
+            result = import_probe(("libs.github", "github.trigger", "github.actions", "github.delete", "github.merge"),
+                                  ("app",))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)
@@ -282,14 +276,9 @@ class RoutingContract(TestSuite):
 
     def test_github_library_import_is_domain_independent(self):
         def check(ctx):
-            import subprocess
-            import sys
-            from tests.fixtures import ROOT
-            code = ("import sys; import libs.github; "
-                    "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
-                    "for name in sys.modules)")
-            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                    capture_output=True, text=True)
+            from tests.fixtures import import_probe
+            result = import_probe(("libs.github",),
+                                  ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)
