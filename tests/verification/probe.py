@@ -12,15 +12,10 @@ from app import cli
 from app.commands import trigger as trigger_command
 from github import delete, merge
 from github import actions
-try:
-    from libs import github as transport
-except ImportError:
-    from github.framework import transport
+from libs import github as transport
 
 def merge_operation(api, repository, ref, number, sha):
-    if hasattr(merge, 'MERGE'):
-        return merge.MERGE.execute(merge.MergeOperation(api, repository, ref, number, sha))
-    return merge.merge_pr(api, repository, ref, number, sha)
+    return merge.MERGE.execute(merge.MergeOperation(api, repository, ref, number, sha))
 
 R = "example/work"
 ROOT = "repos/" + R
@@ -179,17 +174,11 @@ for name in ("merge","branch","serial","reverse","unknown","queue","actions_sing
     record("route:"+name,lambda:trigger_command.dispatch_request(e,repo,ref,dispatch),trace)
 
 def transport_request(method, endpoint, payload, send):
-    if hasattr(transport, "GitHubClient"):
-        return transport.GitHubClient(send).request(method, endpoint, payload)
-    return transport.github_api(method, endpoint, payload, send=send)
+    return transport.GitHubClient(send).request(method, endpoint, payload)
 def transport_dispatch(repository, workflow, payload, send):
-    if hasattr(transport, "GitHubClient"):
-        return transport.GitHubClient(send).dispatch(repository, workflow, payload)
-    return transport.dispatch_workflow(repository, workflow, payload, send=send)
+    return transport.GitHubClient(send).dispatch(repository, workflow, payload)
 def transport_delete(endpoint, send):
-    if hasattr(transport, "GitHubClient"):
-        return transport.GitHubClient(send).delete(endpoint)
-    return transport.delete_resource(endpoint, send=send)
+    return transport.GitHubClient(send).delete(endpoint)
 
 for method,status in (("GET",200),("PUT",200),("POST",200),("POST",204),("POST",202),
                       ("DELETE",204),("DELETE",200),("DELETE",202),
@@ -216,22 +205,13 @@ for args in ([],["trigger"],["execute"],["merge"],["delete"],["test"]):
     record("cli:help:"+"/".join(args),lambda:cli.main(args+["--help"]),Mock())
 for args in ([],["unknown"],["execute"],["delete","unknown"],["execute","--serial-stage","3"]):
     record("cli:invalid:"+"/".join(args),lambda:cli.main(args),Mock())
-try:
-    from libs.command import Command, CommandPlan, local_plan, validate_command
-    from app.wiring import register as register_command, configured_commands, COMMANDS, resolve_execution
-    registry_module = "app.wiring"
-except ModuleNotFoundError:
-    from app.framework.registry import register as register_command, configured_commands, COMMANDS, resolve_execution
-    from app.framework.model import Command, CommandPlan, local_plan, validate_command
-    registry_module = "app.framework.registry"
+from libs.command import Command, CommandPlan, local_plan, validate_command
+from app.wiring import register as register_command, configured_commands, COMMANDS, resolve_execution
+registry_module = "app.wiring"
 from tests import suites
-try:
-    from libs.testing import TestSuite
-    from tests.wiring import register as register_suite, build_suite, SUITES
-except ModuleNotFoundError:
-    from tests.framework.registry import register as register_suite, build_suite, SUITES
-    from tests.framework.model import TestSuite
-WorkflowRegistry = transport.WorkflowRegistry if hasattr(transport, 'WorkflowRegistry') else __import__('github.framework.registry', fromlist=['WorkflowRegistry']).WorkflowRegistry
+from libs.testing import TestSuite
+from tests.wiring import register as register_suite, build_suite, SUITES
+WorkflowRegistry = transport.WorkflowRegistry
 
 class Sample(Command):
     help = "fixture"
@@ -300,15 +280,10 @@ class Targeted(Command):
     help="target probe"
     targets=(("branch",local_plan(lambda ctx,args:7)),)
 record("command_lifecycle:unknown_target",lambda:Targeted.execute(SimpleNamespace(target="invalid")),Mock())
-try:
-    from libs.workflow import PRContext, Context
-    from github.actions import ActionsContext
-    def make_pr(execution,env):
-        return PRContext(execution,env=env,resolve=resolve_execution)
-except ModuleNotFoundError:
-    from app.framework.model import PRContext, Context, ActionsContext
-    def make_pr(execution,env):
-        return PRContext(execution,env=env)
+from libs.workflow import PRContext, Context
+from github.actions import ActionsContext
+def make_pr(execution,env):
+    return PRContext(execution,env=env,resolve=resolve_execution)
 env0={"GITHUB_EVENT_NAME":"workflow_dispatch","GITHUB_RUN_ATTEMPT":"1",
       "GITHUB_REPOSITORY":R,"GITHUB_REF":REF,"EXECUTION_INPUTS":json.dumps({"pr_number":7,"expected_head_sha":SHA}),
       "GITHUB_SERVER_URL":"https://github.com","GITHUB_ACTOR_ID":"1",
