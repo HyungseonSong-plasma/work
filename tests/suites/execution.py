@@ -384,13 +384,9 @@ class ExecutionContract(TestSuite):
 
     def test_workflow_library_import_is_domain_independent(self):
         def check(ctx):
-            import subprocess
-            import sys
-            code = ("import sys; import libs.workflow; "
-                    "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
-                    "for name in sys.modules)")
-            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                    capture_output=True, text=True)
+            from tests.fixtures import import_probe
+            result = import_probe(("libs.workflow",),
+                                  ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((ROOT / "app" / "framework").exists())
 

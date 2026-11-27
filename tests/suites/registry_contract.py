@@ -461,14 +461,9 @@ class RegistryContract(TestSuite):
                                    message="override {name}", classmethods=classmethods)
 
     def test_shared_frame_import_is_domain_independent(self):
-        import subprocess
-        import sys
-        from tests.fixtures import ROOT
-        code = ("import sys; import libs.frame; "
-                "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
-                "for name in sys.modules)")
-        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                capture_output=True, text=True)
+        from tests.fixtures import import_probe
+        result = import_probe(("libs.frame",),
+                              ("app", "tests", "github", "config"))
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_frame_contract_rejects_invalid_declarations(self):
@@ -540,14 +535,9 @@ class RegistryContract(TestSuite):
             Frame(contract, ())
 
     def test_testing_library_import_is_domain_independent(self):
-        import subprocess
-        import sys
-        from tests.fixtures import ROOT
-        code = ("import sys; import libs.testing; "
-                "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
-                "for name in sys.modules)")
-        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
-                                capture_output=True, text=True)
+        from tests.fixtures import import_probe, ROOT
+        result = import_probe(("libs.testing",),
+                              ("app", "tests", "github", "config"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((ROOT / "tests" / "framework").exists())
 
@@ -614,3 +604,44 @@ class RegistryContract(TestSuite):
         loader.loadTestsFromTestCase.return_value = unittest.TestSuite([Direct("test_first")])
         with self.assertRaisesRegex(ValueError, "Unexpected test loader coverage"):
             registry.build(("registry",), loader=loader, self_test=("registry", Direct))
+
+    def test_shared_scope_preserves_exit_failures_and_exception_identity(self):
+        for runner in ("contract", "scenario"):
+            for failure in ("entry", "body", "exit", "suppression"):
+                with self.subTest(runner=runner, failure=failure):
+                    original = StopIteration("original")
+                    cleanup = RuntimeError("cleanup")
+                    scope = Mock()
+                    from unittest.mock import MagicMock
+                    manager = MagicMock()
+                    manager.__enter__.side_effect = original if failure == "entry" else None
+                    manager.__exit__.side_effect = cleanup if failure == "exit" else None
+                    manager.__exit__.return_value = failure == "suppression"
+                    scope.return_value = manager
+                    act = Mock(side_effect=original if failure in ("body", "suppression") else None)
+                    check = Mock()
+                    expected = (cleanup if failure == "exit" else original)
+                    def run():
+                        if runner == "contract":
+                            self.run_contract(act, check, arrange=scope)
+                        else:
+                            self.run_scenario((("step", act),), check, arrange=scope)
+                    if failure == "suppression":
+                        with self.assertRaisesRegex(AssertionError, runner.capitalize() + " scope suppressed a failure."):
+                            run()
+                    else:
+                        with self.assertRaises(type(expected)) as caught:
+                            run()
+                        self.assertIs(caught.exception, expected)
+                    scope.assert_called_once()
+                    if failure == "entry":
+                        manager.__exit__.assert_not_called()
+                        act.assert_not_called()
+                    else:
+                        manager.__exit__.assert_called_once()
+                        if failure in ("body", "suppression"):
+                            self.assertIs(manager.__exit__.call_args.args[1], original)
+                    if failure != "exit":
+                        check.assert_not_called()
+                    else:
+                        check.assert_called_once()
