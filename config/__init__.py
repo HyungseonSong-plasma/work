@@ -17,7 +17,7 @@ def _unique_object(pairs):
 
 
 def load_registry(name):
-    if name not in {"commands", "executions", "workflows", "deletions"}:
+    if name not in {"commands", "executions", "workflows", "deletions", "tests"}:
         raise ValueError("Unknown registry file.")
     path = ROOT / (name + ".json")
     if path.is_symlink() or not path.is_file():
