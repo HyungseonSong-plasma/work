@@ -43,7 +43,8 @@ class ConfigurationContract(TestSuite):
 
     def test_deletion_config(self):
         require_deletion("branch")
-        for target in ("issue", "actions", "unknown"):
+        require_deletion("actions")
+        for target in ("issue", "unknown"):
             with self.subTest(target=target):
                 self.assert_rejected(require_deletion, target)
 

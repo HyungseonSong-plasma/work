@@ -6,7 +6,7 @@ enabled = true
 permission = "contents: write"
 
 [deletions.actions]
-enabled = false
+enabled = true
 permission = "actions: write"
 
 [deletions.issue]

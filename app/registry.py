@@ -1,6 +1,8 @@
 # FileRank: C
 """Explicit registration for trusted CLI commands."""
 
+from inspect import isabstract
+
 from config import load_names
 
 COMMANDS = {}
@@ -15,7 +17,7 @@ def register(name):
             raise ValueError("Invalid command name.")
         if name in COMMANDS:
             raise ValueError(f"Duplicate command: {name}")
-        if not isinstance(command, type) or not issubclass(command, Command):
+        if not isinstance(command, type) or not issubclass(command, Command) or isabstract(command):
             raise TypeError("Command must extend Command model.")
         if not all(callable(getattr(command, attr, None))
                    for attr in ("configure", "execute")):

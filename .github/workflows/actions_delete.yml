@@ -1,0 +1,41 @@
+# FileRank: C
+name: Delete Actions Run
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Exact reviewed workflow run ID
+        required: true
+        type: string
+      expected_head_sha:
+        description: Full reviewed run head SHA
+        required: true
+        type: string
+      expected_run_attempt:
+        description: Reviewed run attempt
+        required: true
+        type: string
+
+run-name: Delete Actions run ${{ inputs.run_id }}
+permissions: {}
+jobs:
+  delete:
+    if: ${{ github.actor_id == format('{0}', github.event.repository.owner.id) && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_attempt == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Check out trusted workflow commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Delete one reviewed completed run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_RUN_ID: ${{ inputs.run_id }}
+          TARGET_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          TARGET_RUN_ATTEMPT: ${{ inputs.expected_run_attempt }}
+        run: python3 -m app delete actions --run-id "$TARGET_RUN_ID" --expected-head-sha "$TARGET_HEAD_SHA" --expected-run-attempt "$TARGET_RUN_ATTEMPT"

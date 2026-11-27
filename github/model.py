@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from urllib.request import Request, urlopen
 
 
@@ -35,6 +36,30 @@ def dispatch_workflow(repository, workflow, payload, send=urlopen):
     with send(_request("POST", endpoint, payload), timeout=30) as response:
         if response.status not in (200, 204):
             raise ValueError(f"Unexpected dispatch status: {response.status}")
+
+
+def parse_pr_parameters(raw):
+    parameters = json.loads(raw)
+    if not isinstance(parameters, dict) or set(parameters) != {
+        "pr_number", "expected_head_sha"
+    }:
+        raise ValueError("Provide pr_number and expected_head_sha only.")
+    number = parameters["pr_number"]
+    if type(number) is int:
+        number = str(number)
+    sha = parameters["expected_head_sha"]
+    if not isinstance(number, str) or not re.fullmatch(r"[1-9][0-9]*", number):
+        raise ValueError("Invalid pull request number.")
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("Expected a full lowercase Git commit SHA.")
+    return number, sha
+
+
+def delete_resource(endpoint, send=urlopen):
+    """Delete one REST resource; require explicit HTTP 204 confirmation."""
+    with send(_request("DELETE", endpoint), timeout=30) as response:
+        if response.status != 204:
+            raise ValueError(f"Unexpected deletion status: {response.status}")
 
 
 class WorkflowRegistry:

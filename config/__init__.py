@@ -38,6 +38,6 @@ def require_deletion(target):
         if (not isinstance(entry, dict) or set(entry) != {"enabled", "permission"} or
                 type(entry["enabled"]) is not bool or not isinstance(entry["permission"], str)):
             raise ValueError("Invalid deletion entry.")
-    # Only branch deletion has an implemented and authorized handler.
-    if target not in {"branch"} or entries.get(target, {}).get("enabled") is not True:
+    # Only explicitly implemented deletion targets can be enabled.
+    if target not in {"branch", "actions"} or entries.get(target, {}).get("enabled") is not True:
         raise ValueError(f"Deletion target is disabled or unsupported: {target}")

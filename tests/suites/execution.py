@@ -59,7 +59,7 @@ class ExecutionContract(TestSuite):
                 merge.assert_called_once_with(task_command.github_api, REPO, REF, "7", SHA)
 
     def test_branch_disabled_blocks_before_api(self):
-        from scripts.branch_delete import delete_branch
+        from github.delete import delete_branch
         api, git = Mock(), Mock()
         with patch("config.load_registry", return_value={
                 "branch": {"enabled": False, "permission": "contents: write"}}):
