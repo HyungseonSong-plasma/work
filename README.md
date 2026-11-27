@@ -29,3 +29,7 @@ An owner-authored top-level comment on the target PR can request execution witho
 Replace the placeholder with the real SHA. The PR number is derived from the comment's PR. Only newly created comments from the repository owner are accepted; edits, other authors and comment-run replays are rejected. Trigger and the execution workflows check out their trusted default-branch event commits, not the PR's code. Trigger has contents: read and actions: write; only the execution jobs have contents: write. A fresh request is required instead of rerunning a previous run.
 
 For scheduled submission, an explicitly owner-authored comment can use the same JSON with the prefix `/queue `. The ChatGPT scheduled task may submit an equivalent `/execute ` comment with a `queue_comment_id` identifying the approval. A queue entry is not itself an execution trigger. The scheduler must verify the author's ID and current PR state/SHA and avoid resubmitting a queue ID already dispatched. Never infer approval from ordinary PR text. Do not automatically retry failed commands; submit a fresh explicit request.
+
+### Inspecting execution results
+
+Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submission, then find the corresponding Single Run or Serial Run by its `comment-<id>` run-name suffix. In Serial Run, inspect Merge and Delete separately. A successful Delete job can also represent a safety skip; verify its log and branch state before reporting that the branch was removed.
