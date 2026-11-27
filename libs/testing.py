@@ -164,8 +164,8 @@ def _declaration(node):
     return True
 
 
-def validate_method(source):
-    """Require one final runner call and only declarations before it."""
+def _method_body(source):
+    """Validate the test envelope before inspecting individual declarations."""
     tree = ast.parse(textwrap.dedent(source))
     if len(tree.body) != 1 or not isinstance(tree.body[0], ast.FunctionDef):
         raise ValueError("Expected one test method.")
@@ -188,8 +188,13 @@ def validate_method(source):
     if any(isinstance(node, ast.Attribute) and _name(node.value, "self")
            and node.attr == "ctx" for node in ast.walk(method)):
         raise ValueError("Use the runner-owned callback context.")
+    return body
+
+
+def _collect_declarations(nodes):
+    """Collect named callbacks and data declarations; reject executable statements."""
     callbacks, declarations = {}, {}
-    for node in body[:-1]:
+    for node in nodes:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
         if isinstance(node, ast.FunctionDef):
@@ -213,49 +218,72 @@ def validate_method(source):
         else:
             raise ValueError("Only data and callback declarations may precede the runner.")
 
-    call = body[-1].value
+    return callbacks, declarations
+
+
+def _validate_runner_call(call, callbacks, declarations):
+    """Check runner-specific argument grammar and exact callback ownership."""
     runner = call.func.attr
     keywords = {keyword.arg: keyword.value for keyword in call.keywords}
     if len(keywords) != len(call.keywords) or None in keywords:
         raise ValueError("Invalid runner keywords.")
     used = {"check"}
     if runner == "run_cases":
-        if (len(call.args) != 2 or not _name(call.args[0], "cases")
-                or not _name(call.args[1], "check") or keywords
-                or "cases" not in declarations):
-            raise ValueError("Use self.run_cases(cases, check).")
+        _validate_cases_call(call, keywords, declarations)
     elif runner == "run_contract":
-        if not call.args and _name(keywords.get("check"), "check"):
-            keywords.pop("check")
-            if "raises" in keywords:
-                raise ValueError("Expected exceptions require split contract form.")
-        elif (len(call.args) == 2 and _name(call.args[0], "act")
-              and _name(call.args[1], "check")):
-            used.add("act")
-        else:
-            raise ValueError("Use run_contract(act, check) or run_contract(check=check).")
-        if "raises" in keywords and not _declaration(keywords.pop("raises")):
-            raise ValueError("Invalid expected exception declaration.")
+        _validate_contract_call(call, keywords, used)
     else:
-        if (len(call.args) != 2 or not _name(call.args[0], "steps")
-                or not _name(call.args[1], "check") or "steps" not in declarations):
-            raise ValueError("Use self.run_scenario(steps, check).")
-        steps = declarations["steps"]
-        if not isinstance(steps, (ast.Tuple, ast.List)) or not steps.elts:
-            raise ValueError("Scenario requires an explicit named step table.")
-        for row in steps.elts:
-            if (not isinstance(row, ast.Tuple) or len(row.elts) != 2
-                    or not isinstance(row.elts[0], ast.Constant)
-                    or not isinstance(row.elts[0].value, str)
-                    or not isinstance(row.elts[1], ast.Name)):
-                raise ValueError("Invalid step declaration.")
-            used.add(row.elts[1].id)
+        _validate_scenario_call(call, declarations, used)
     if "arrange" in keywords and runner != "run_cases":
         if not _name(keywords.pop("arrange"), "arrange"):
             raise ValueError("Use the named arrange callback.")
         used.add("arrange")
     if keywords or set(callbacks) != used:
         raise ValueError("Missing, unused or unexpected runner callbacks.")
+
+
+def _validate_cases_call(call, keywords, declarations):
+    if (len(call.args) != 2 or not _name(call.args[0], "cases")
+            or not _name(call.args[1], "check") or keywords
+            or "cases" not in declarations):
+        raise ValueError("Use self.run_cases(cases, check).")
+
+
+def _validate_contract_call(call, keywords, used):
+    if not call.args and _name(keywords.get("check"), "check"):
+        keywords.pop("check")
+        if "raises" in keywords:
+            raise ValueError("Expected exceptions require split contract form.")
+    elif (len(call.args) == 2 and _name(call.args[0], "act")
+          and _name(call.args[1], "check")):
+        used.add("act")
+    else:
+        raise ValueError("Use run_contract(act, check) or run_contract(check=check).")
+    if "raises" in keywords and not _declaration(keywords.pop("raises")):
+        raise ValueError("Invalid expected exception declaration.")
+
+
+def _validate_scenario_call(call, declarations, used):
+    if (len(call.args) != 2 or not _name(call.args[0], "steps")
+            or not _name(call.args[1], "check") or "steps" not in declarations):
+        raise ValueError("Use self.run_scenario(steps, check).")
+    steps = declarations["steps"]
+    if not isinstance(steps, (ast.Tuple, ast.List)) or not steps.elts:
+        raise ValueError("Scenario requires an explicit named step table.")
+    for row in steps.elts:
+        if (not isinstance(row, ast.Tuple) or len(row.elts) != 2
+                or not isinstance(row.elts[0], ast.Constant)
+                or not isinstance(row.elts[0].value, str)
+                or not isinstance(row.elts[1], ast.Name)):
+            raise ValueError("Invalid step declaration.")
+        used.add(row.elts[1].id)
+
+
+def validate_method(source):
+    """Require one final runner call and only declarations before it."""
+    body = _method_body(source)
+    callbacks, declarations = _collect_declarations(body[:-1])
+    _validate_runner_call(body[-1].value, callbacks, declarations)
 
 
 def validate_suite(case):

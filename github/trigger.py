@@ -4,9 +4,8 @@
 import json
 
 from github.actions import actions_request
-from libs.github import CLIENT
-from libs.github import (validate_sha, validate_pr_number, require_default_ref,
-                                    parse_execute_comment, is_unchanged_comment)
+from libs.github import (CLIENT, validate_sha, validate_pr_number, require_default_ref,
+                         parse_execute_comment, is_unchanged_comment)
 
 
 def owner_comment(event):
@@ -83,15 +82,18 @@ def route(event, repository, ref, *, routes, resolve):
     request_id = f"comment-{comment_id}"
     if isinstance(request, dict) and request.get("execution") == "delete actions":
         return route_actions(event, default, request_id, request)
+    return _route_pr(event, default, request_id, request, routes, resolve)
+
+
+def _route_pr(event, default, request_id, request, routes, resolve):
     execution, parameters = _comment_parameters(event, request)
     executions = resolve(execution, parameters)
-    workflow = routes.resolve(executions)
-    return workflow, {
+    return routes.resolve(executions), {
         "ref": default,
         "inputs": {
             "execution": " - ".join(executions),
             "parameters": parameters,
-            "request_id": f"comment-{comment_id}",
+            "request_id": request_id,
         },
     }
 
