@@ -3,8 +3,8 @@
 
 import unittest
 
-from app.framework.registry import register
-from app.framework.model import Command, local_plan
+from app.wiring import register
+from libs.command import Command, local_plan
 
 
 def action(ctx, args):
@@ -19,4 +19,5 @@ def action(ctx, args):
 @register("test")
 class TestCommand(Command):
     help = "Run registered offline regression tests"
+    workflow_execution = ()
     plan = local_plan(action)

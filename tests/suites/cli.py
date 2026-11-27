@@ -7,8 +7,8 @@ from unittest.mock import Mock, patch
 
 from app import cli
 from app.commands import execute as execute_command
-from app.framework.registry import COMMANDS, register, workflow_commands
-from app.framework.model import Command, CommandPlan, local_plan
+from app.wiring import COMMANDS, register, workflow_commands
+from libs.command import Command, CommandPlan, local_plan
 from tests.framework.model import TestSuite
 from tests.framework.registry import register as register_suite
 
@@ -77,7 +77,7 @@ class CliContract(TestSuite):
 
                     plan = local_plan(lambda ctx, args: args.value)
 
-                with patch("app.framework.registry.load_names", return_value=("sample",)):
+                with patch("app.wiring.load_names", return_value=("sample",)):
                     self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
 
         self.run_contract(check=check)
@@ -264,10 +264,87 @@ class CliContract(TestSuite):
 
             with patch.dict(COMMANDS):
                 register("sample")(Sample)
-                with patch("app.framework.registry.load_names", return_value=("sample",)):
+                with patch("app.wiring.load_names", return_value=("sample",)):
                     with self.assertRaises(TypeError):
                         cli.main(["sample"])
             action.assert_not_called()
             alternate.assert_not_called()
 
         self.run_contract(check=check)
+
+    def test_command_library_import_is_domain_independent(self):
+        def check(ctx):
+            import subprocess
+            import sys
+            from tests.framework.model import ROOT
+            code = ("import sys; import libs.command; "
+                    "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
+                    "for name in sys.modules)")
+            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.run_contract(check=check)
+
+    def test_command_registry_isolation_and_manifest_order(self):
+        def check(ctx):
+            from libs.command import CommandRegistry
+            first, second = CommandRegistry(), CommandRegistry()
+
+            @first.register("alpha")
+            class Alpha(Command):
+                help = "Alpha"
+                plan = local_plan(lambda ctx, args: 1)
+
+            @first.register("beta")
+            class Beta(Command):
+                help = "Beta"
+                plan = local_plan(lambda ctx, args: 2)
+
+            second.register("alpha")(Beta)
+            self.assertEqual(list(first.configured(("beta", "alpha")).items()),
+                             [("beta", Beta), ("alpha", Alpha)])
+            self.assertEqual(first.configured(("alpha",)), {"alpha": Alpha})
+            self.assertEqual(second.configured(("alpha",)), {"alpha": Beta})
+            self.assert_rejected(second.configured, ("beta",))
+            self.assert_rejected(first.register("alpha"), object)
+            self.assertEqual(first["alpha"], Alpha)
+
+        self.run_contract(check=check)
+
+    def test_command_fixed_frame_preserves_context_report_and_status(self):
+        cases = (("status_report", True, True), ("zero_report", False, True),
+                 ("status_no_report", True, False), ("zero_no_report", False, False))
+
+        def check(ctx, returns_status, has_report):
+            from libs import command as framework
+            from libs.frame import Frame
+            from unittest.mock import call
+            args, prepared, validated, result = (object(), object(), object(), object())
+            prepare = Mock(return_value=prepared)
+            validate = Mock(return_value=validated)
+            action = Mock(return_value=result)
+            report = Mock()
+            trace = Mock()
+            for name, callback in (("prepare", prepare), ("validate", validate),
+                                   ("action", action), ("report", report)):
+                trace.attach_mock(callback, name)
+
+            class Sample(Command):
+                help = "Frame contract"
+                plan = CommandPlan(prepare, validate, action,
+                                   report if has_report else None, returns_status)
+
+            self.assertIs(type(framework._COMMAND_FRAME), Frame)
+            self.assertEqual(framework._COMMAND_FRAME.contract.stages,
+                             ("prepare", "validate", "action", "report"))
+            with patch.object(framework, "_COMMAND_FRAME", wraps=framework._COMMAND_FRAME) as frame:
+                self.assertIs(Sample.execute(args), result if returns_status else 0)
+                frame.execute.assert_called_once()
+            expected = [call.prepare(args), call.validate(prepared, args),
+                        call.action(validated, args)]
+            if has_report:
+                expected.append(call.report(validated, result))
+            self.assertEqual(trace.mock_calls, expected)
+
+        self.run_cases(cases, check)

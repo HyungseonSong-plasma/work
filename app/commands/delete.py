@@ -1,8 +1,9 @@
 # FileRank: C
 """Branch and Actions deletion command with independent target validation."""
 
-from app.framework.model import Command, pr_plan, actions_plan
-from app.framework.registry import register
+from libs.command import Command
+from app.framework.model import pr_plan, actions_plan
+from app.wiring import register
 from github.delete import delete
 from libs.github import CLIENT
 

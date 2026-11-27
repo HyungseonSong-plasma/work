@@ -3,10 +3,10 @@
 
 from unittest.mock import patch
 
-from app.framework.registry import configured_commands
+from app.wiring import configured_commands
 from config import load_names, load_registry, require_deletion
 from libs.github import WorkflowRegistry
-from app.framework.registry import execution_ids
+from app.wiring import execution_ids
 from tests.framework.model import TestSuite, ConfigurationTestContext
 from tests.framework.registry import register
 
@@ -17,14 +17,14 @@ class ConfigurationContract(TestSuite):
 
     def test_configured_commands_exclude_unlisted(self):
         def check(ctx):
-            with patch("app.framework.registry.load_names", return_value=("trigger",)):
+            with patch("app.wiring.load_names", return_value=("trigger",)):
                 self.assertEqual(tuple(configured_commands()), ("trigger",))
 
         self.run_contract(check=check)
 
     def test_unknown_configured_command_rejected(self):
         def check(ctx):
-            with patch("app.framework.registry.load_names", return_value=("missing",)):
+            with patch("app.wiring.load_names", return_value=("missing",)):
                 with self.assertRaises(ValueError):
                     configured_commands()
 

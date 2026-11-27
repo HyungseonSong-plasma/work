@@ -13,7 +13,7 @@ from tests.framework.registry import register
 from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
 from app.commands.trigger import route_registry
-from app.framework.registry import resolve_execution
+from app.wiring import resolve_execution
 
 
 @register("deletion")
