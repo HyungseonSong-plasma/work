@@ -6,7 +6,7 @@ from functools import partial
 from config import load_registry
 from app.wiring import register, execution_ids, resolve_execution
 from libs.command import Command
-from app.framework.model import workflow_plan
+from libs.workflow import workflow_plan
 from github import trigger
 from libs.github import WorkflowRegistry
 

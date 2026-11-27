@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
-from app.framework.model import Context, PRContext
+from libs.workflow import Context, PRContext
 from app.wiring import resolve_execution
 from tests.framework.model import TestSuite, WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
 from tests.framework.registry import register
@@ -59,7 +59,7 @@ class ExecutionContract(TestSuite):
 
         def check(ctx, changes):
             with ctx.patched_environment(**changes):
-                self.assert_rejected(PRContext("pr_merge.py").validate)
+                self.assert_rejected(PRContext("pr_merge.py", resolve=resolve_execution).validate)
 
         self.run_cases(cases, check)
 
@@ -131,7 +131,7 @@ class ExecutionContract(TestSuite):
 
     def test_pr_context_exposes_validated_fields(self):
         def check(ctx):
-            ctx = PRContext("pr_merge.py", env=ctx.environment()).validate()
+            ctx = PRContext("pr_merge.py", env=ctx.environment(), resolve=resolve_execution).validate()
             self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
                              ("7", SHA, REPO, REF))
 
@@ -199,7 +199,7 @@ class ExecutionContract(TestSuite):
         def check(ctx):
             from app.commands import trigger as trigger_command
             from app import cli
-            from app.framework.model import Context
+            from libs.workflow import Context
             event = ctx.event("pr_merge.py")
             with ctx.patched_environment(GITHUB_EVENT_NAME="issue_comment"):
                 with patch.object(Context, "read_event", return_value=event) as read, \
@@ -380,3 +380,82 @@ class ExecutionContract(TestSuite):
                 call("GET", root), call("GET", root + "/pulls/7")])
 
         self.run_contract(check=check)
+
+    def test_workflow_library_import_is_domain_independent(self):
+        def check(ctx):
+            import subprocess
+            import sys
+            code = ("import sys; import libs.workflow; "
+                    "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
+                    "for name in sys.modules)")
+            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((ROOT / "app" / "framework").exists())
+
+        self.run_contract(check=check)
+
+    def test_pr_context_injected_resolver_order(self):
+        cases = (("success", {}, False, True),
+                 ("wrong_event", {"GITHUB_EVENT_NAME": "issue_comment"}, False, False),
+                 ("rerun", {"GITHUB_RUN_ATTEMPT": "2"}, False, False),
+                 ("resolver_rejection", {}, True, True),
+                 ("invalid_parameters", {"EXECUTION_INPUTS": "{}"}, False, True))
+
+        def check(ctx, changes, reject, calls_resolver):
+            resolver = Mock(side_effect=ValueError("Rejected execution.") if reject else None)
+            context = PRContext("custom.py", env=ctx.environment(**changes), resolve=resolver)
+            if changes or reject:
+                self.assert_rejected(context.validate)
+                self.assertFalse(hasattr(context, "number"))
+                self.assertFalse(hasattr(context, "sha"))
+            else:
+                self.assertIs(context.validate(), context)
+                self.assertEqual((context.number, context.sha), ("7", SHA))
+            if calls_resolver:
+                resolver.assert_called_once_with("custom.py", changes.get("EXECUTION_INPUTS", PARAMS))
+            else:
+                resolver.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_pr_plan_preflight_and_resolver_precede_action(self):
+        cases = (("valid", None), ("preflight_reject", "preflight"),
+                 ("resolve_reject", "resolve"), ("wrong_event", "event"))
+
+        def check(ctx, failure):
+            from libs.workflow import pr_plan
+            from libs.command import Command
+            from unittest.mock import call
+            args = object()
+            trace = Mock()
+            preflight = Mock(side_effect=ValueError("preflight") if failure == "preflight" else None)
+            resolver = Mock(side_effect=ValueError("resolve") if failure == "resolve" else None)
+            action = Mock(return_value="confirmed")
+            report = Mock()
+            for name, callback in (("preflight", preflight), ("resolve", resolver),
+                                   ("action", action), ("report", report)):
+                trace.attach_mock(callback, name)
+
+            class Sample(Command):
+                help = "Workflow contract"
+                plan = pr_plan("custom.py", action, resolve=resolver,
+                               preflight=preflight, report=report)
+
+            changes = {"GITHUB_EVENT_NAME": "issue_comment"} if failure == "event" else {}
+            with ctx.patched_environment(**changes):
+                if failure:
+                    self.assert_rejected(Sample.execute, args)
+                else:
+                    self.assertEqual(Sample.execute(args), 0)
+            expected = [call.preflight(args)]
+            if failure not in ("preflight", "event"):
+                expected.append(call.resolve("custom.py", PARAMS))
+            if not failure:
+                validated, actual_args = action.call_args.args
+                self.assertEqual((validated.number, validated.sha), ("7", SHA))
+                self.assertIs(actual_args, args)
+                expected.extend([call.action(validated, args), call.report(validated, "confirmed")])
+            self.assertEqual(trace.mock_calls, expected)
+
+        self.run_cases(cases, check)

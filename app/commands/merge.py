@@ -2,8 +2,7 @@
 """Merge an explicitly reviewed PR through the shared command model."""
 
 from libs.command import Command
-from app.framework.model import pr_plan
-from app.wiring import register
+from app.wiring import register, pr_plan
 from libs.github import CLIENT
 from github import merge
 

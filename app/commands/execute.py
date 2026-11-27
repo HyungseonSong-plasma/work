@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.wiring import register, resolve_execution, workflow_commands
 from libs.command import Command
-from app.framework.model import workflow_plan
+from libs.workflow import workflow_plan
 
 
 def run_execution(executions, run=subprocess.run):
