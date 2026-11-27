@@ -4,7 +4,7 @@ work laboratory
 
 ## Execution
 
-Use [Single Run](../../actions/workflows/single_run.yml) for one script or [Serial Run](../../actions/workflows/serial_run.yml) for a dependent chain. Both run on the default branch.
+Use [Single Run](../../actions/workflows/single_run.yml) for one execution identifier or [Serial Run](../../actions/workflows/serial_run.yml) for a dependent chain. Both run on the default branch.
 
 | execution | Operation |
 | --- | --- |
@@ -14,13 +14,13 @@ Use [Single Run](../../actions/workflows/single_run.yml) for one script or [Seri
 
 Supply shared parameters as a JSON object containing `pr_number` and `expected_head_sha` (the full reviewed PR head commit SHA).
 
-The dispatcher validates the full registered execution list before starting. Single Run has one job (Merge or Delete). Serial Run has two jobs (Merge then Delete); Delete starts only after Merge succeeds. The current serial workflow supports exactly the two registered scripts in that order. Branch deletion still applies its own safety checks and may skip deletion. If deletion fails after a successful merge, retry only `branch_delete.py` with the same parameters in Single Run.
+The dispatcher validates the full registered execution list before starting. Single Run has one job (Merge or Delete). Serial Run has two jobs (Merge then Delete); Delete starts only after Merge succeeds. The current serial workflow supports exactly the two registered execution identifiers in that order. Branch deletion still applies its own safety checks and may skip deletion. If deletion fails after a successful merge, retry only `branch_delete.py` with the same parameters in Single Run.
 
 Only the explicitly requested operations run; ordinary PR merges do not automatically trigger branch deletion.
 
 ### Chat and scheduled execution
 
-An owner-authored top-level comment on the target PR can request execution without opening the Actions UI. Only Trigger subscribes to PR comments. It validates the owner and the full registered execution list, then submits exactly one workflow_dispatch request to Single Run or Serial Run. The execution workflows no longer subscribe to comments. Trigger reports submission, not execution success; the target run has the source comment ID in its run name. The target workflow independently validates the full chain and expected script count:
+An owner-authored top-level comment on the target PR can request execution without opening the Actions UI. Only Trigger subscribes to PR comments. It validates the owner and the full registered execution list, then submits exactly one workflow_dispatch request to Single Run or Serial Run. The execution workflows no longer subscribe to comments. Trigger reports submission, not execution success; the target run has the source comment ID in its run name. The target workflow independently validates the full chain and expected execution count:
 
 ```text
 /execute {"execution":"pr_merge.py - branch_delete.py","expected_head_sha":"<full reviewed PR head SHA>"}
@@ -97,4 +97,4 @@ After standardizing the thin command adapters, verify the unchanged serial comme
 
 Verify the context model on the post-change default branch using the unchanged serial comment route and both single and batch Actions deletion requests.
 
-Shared SHA, PR number, default-ref and execution-comment parsing functions live in `github/model.py`. Trigger and workers independently invoke these validators; remote-state and mutation guards remain in the GitHub operation handlers. `github/merge.py` contains PR merge implementation. Deletion policy is enforced at each actual handler rather than twice in the dispatcher and handler.
+Shared SHA, PR number, default-ref and execution-comment parsing functions live in `github/model.py`. Trigger and workers independently invoke these validators; remote-state and mutation guards remain in the GitHub operation handlers. `github/merge.py` contains PR merge implementation. Deletion policy checks remain at both the public dispatcher and directly callable mutation handlers as independent safeguards.

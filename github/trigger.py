@@ -29,8 +29,11 @@ def owner_comment(event):
     return parse_execute_comment(comment["body"])
 
 
-def comment_request(event, request=None):
-    request = owner_comment(event) if request is None else request
+def comment_request(event):
+    return _comment_parameters(event, owner_comment(event))
+
+
+def _comment_parameters(event, request):
     issue = event["issue"]
     if not isinstance(request, dict) or set(request) not in (
         {"execution", "expected_head_sha"},
@@ -101,7 +104,7 @@ def route(event, repository, ref):
     request_id = f"comment-{comment_id}"
     if isinstance(request, dict) and request.get("execution") == "delete actions":
         return route_actions(event, default, request_id, request)
-    execution, parameters = comment_request(event, request)
+    execution, parameters = _comment_parameters(event, request)
     executions = resolve_execution(execution, parameters)
     workflow = registry.resolve(executions)
     return workflow, {

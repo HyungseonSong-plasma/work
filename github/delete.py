@@ -240,4 +240,5 @@ def delete(target, **parameters):
     """Dispatch to one explicit deletion implementation, never discover code."""
     if target not in DELETIONS:
         raise ValueError("Unregistered deletion target.")
+    require_deletion("actions" if target == "actions_batch" else target)
     return DELETIONS[target](**parameters)

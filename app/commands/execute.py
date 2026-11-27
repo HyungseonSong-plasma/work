@@ -31,7 +31,7 @@ def run_execution(executions, run=subprocess.run):
 def run_stage(executions, stage, run=subprocess.run):
     """Run exactly one slot of a validated two-command serial request."""
     if len(executions) != 2 or stage not in (1, 2):
-        raise ValueError("Serial execution requires exactly two scripts.")
+        raise ValueError("Serial execution requires exactly two commands.")
     return run_execution([executions[stage - 1]], run=run)
 
 
