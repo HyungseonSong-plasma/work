@@ -40,32 +40,68 @@ class DeletionContract(TestSuite):
         self.ctx.remove.assert_not_called()
 
     def test_actions_reject_invalid_or_current_id(self):
-        for run_id in (True, 0, -1, 13, "12"):
-            with self.subTest(run_id=run_id):
-                self.assert_rejected(deletion.delete, "actions",
-                                     **dict(self.ctx.parameters, run_id=run_id))
-        self.ctx.api.assert_not_called()
-        self.ctx.remove.assert_not_called()
+        cases = (
+            ("boolean", True),
+            ("zero", 0),
+            ("negative", -1),
+            ("current_run", 13),
+            ("string", "12"),
+        )
+
+        def check(ctx, run_id):
+            self.assert_rejected(deletion.delete, "actions", **dict(ctx.parameters, run_id=run_id))
+            ctx.api.assert_not_called()
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
 
     def test_actions_reject_unreviewed_metadata(self):
-        for changes in ({"status": "in_progress"}, {"head_sha": "b" * 40},
-                        {"run_attempt": 2}, {"id": 99},
-                        {"repository": {"id": 2, "full_name": REPO}}):
-            with self.subTest(changes=changes):
-                original = deepcopy(self.ctx.run_data)
-                self.ctx.run_data.update(changes)
-                self.assert_rejected(deletion.delete, "actions", **self.ctx.parameters)
-                self.ctx.run_data = original
-        self.ctx.remove.assert_not_called()
+        cases = (
+            ("in_progress", {"status": "in_progress"}),
+            ("wrong_sha", {"head_sha": "b" * 40}),
+            ("wrong_attempt", {"run_attempt": 2}),
+            ("wrong_id", {"id": 99}),
+            ("wrong_repository", {"repository": {"id": 2, "full_name": REPO}}),
+        )
+
+        def check(ctx, changes):
+            ctx.run_data.update(changes)
+            self.assert_rejected(deletion.delete, "actions", **ctx.parameters)
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_actions_reject_changed_run_or_ref(self):
+        cases = (
+            ("changed_run", REF, True),
+            ("non_default_ref", "refs/heads/other", False),
+        )
+
+        def check(ctx, ref, changed):
+            if changed:
+                ctx.api.side_effect = [ctx.repo, ctx.run_data, dict(ctx.run_data, run_attempt=2)]
+            self.assert_rejected(deletion.delete, "actions", **dict(ctx.parameters, run_ref=ref))
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
 
     def test_latest_success_retained_for_each_workflow(self):
-        for path in deletion.actions_policy()["protected_workflows"]:
-            with self.subTest(path=path):
-                run = dict(self.ctx.run_data, path=path, workflow_id=7,
-                           conclusion="success", created_at="2026-11-27T10:00:00Z")
-                self.ctx.api.side_effect = [self.ctx.repo, run, {"total_count": 1, "workflow_runs": [run]}]
-                self.assert_rejected(deletion.delete, "actions", **self.ctx.parameters)
-        self.ctx.remove.assert_not_called()
+        # Explicit expected policy, independent of the production manifest.
+        cases = (
+            ("trigger", ".github/workflows/trigger.yml"),
+            ("single", ".github/workflows/single_run.yml"),
+            ("serial", ".github/workflows/serial_run.yml"),
+            ("actions_delete", ".github/workflows/actions_delete.yml"),
+        )
+
+        def check(ctx, path):
+            run = dict(ctx.run_data, path=path, workflow_id=7,
+                       conclusion="success", created_at="2026-11-27T10:00:00Z")
+            ctx.api.side_effect = [ctx.repo, run, {"total_count": 1, "workflow_runs": [run]}]
+            self.assert_rejected(deletion.delete, "actions", **ctx.parameters)
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
 
     def test_older_success_can_be_deleted(self):
         run = dict(self.ctx.run_data, path=".github/workflows/trigger.yml", workflow_id=7,
@@ -104,8 +140,17 @@ class DeletionContract(TestSuite):
 
     def test_batch_invalid_and_duplicate_rejected(self):
         target = self.ctx.target()
-        for targets in ([], [target, target], [dict(target, run_id=True)], [target] * 31):
+        cases = (
+            ("empty", []),
+            ("duplicate", [target, target]),
+            ("boolean_id", [dict(target, run_id=True)]),
+            ("over_limit", [self.ctx.target(number) for number in range(1, 32)]),
+        )
+
+        def check(ctx, targets):
             self.assert_rejected(deletion.validate_actions_targets, targets)
+
+        self.run_cases(cases, check)
 
     def test_batch_comment_dispatches_once(self):
         targets = [self.ctx.target(),
@@ -119,25 +164,26 @@ class DeletionContract(TestSuite):
         dispatch.assert_called_once()
         self.assertEqual(json.loads(dispatch.call_args.args[2]["inputs"]["runs"]), targets)
 
-    def test_actions_reject_changed_run_before_delete(self):
-        self.ctx.api.side_effect = [self.ctx.repo, self.ctx.run_data,
-                                dict(self.ctx.run_data, run_attempt=2)]
-        self.assert_rejected(deletion.delete, "actions", **self.ctx.parameters)
-        self.ctx.remove.assert_not_called()
 
-    def test_actions_reject_non_default_ref(self):
-        self.assert_rejected(deletion.delete, "actions",
-                             **dict(self.ctx.parameters, run_ref="refs/heads/other"))
-        self.ctx.remove.assert_not_called()
 
     def test_actions_context_requires_owner_and_workflow(self):
         event = self.ctx.approval_event()
-        workflow_ref = self.ctx.workflow_ref
-        self.ctx.validate_context(event, REPO, REF, "1", workflow_ref)
-        self.assert_rejected(self.ctx.validate_context, event, REPO, REF, "2", workflow_ref)
-        self.assert_rejected(self.ctx.validate_context, event, REPO, REF, "1", "other")
-        self.assert_rejected(self.ctx.validate_context, dict(event, sender={"id": 2}),
-                             REPO, REF, "1", workflow_ref)
+        self.ctx.validate_context(event, REPO, REF, "1", self.ctx.workflow_ref)
+
+        cases = (
+            ("wrong_actor", False, "2", self.ctx.workflow_ref, None),
+            ("wrong_workflow", False, "1", "other", None),
+            ("sender_mismatch", False, "1", self.ctx.workflow_ref, {"id": 2}),
+            ("bot_without_approval", True, "41898282", self.ctx.workflow_ref, None),
+        )
+
+        def check(ctx, bot, actor, workflow, sender):
+            event = ctx.approval_event(bot=bot)
+            if sender is not None:
+                event["sender"] = sender
+            self.assert_rejected(ctx.validate_context, event, REPO, REF, actor, workflow)
+
+        self.run_cases(cases, check)
 
     def test_rest_delete_requires_204(self):
         from unittest.mock import MagicMock
@@ -166,16 +212,23 @@ class DeletionContract(TestSuite):
                 "expected_run_attempt": "1", "source_pr": "7", "request_id": "comment-12"}})
 
     def test_actions_comment_rejects_invalid_requests(self):
-        for changes in ({"run_id": True}, {"queue_comment_id": 1},
-                        {"expected_run_attempt": 0}, {"expected_head_sha": "bad"}):
-            request = self.ctx.event("pr_merge.py")
+        cases = (
+            ("boolean_id", {"run_id": True}),
+            ("queue_not_supported", {"queue_comment_id": 1}),
+            ("zero_attempt", {"expected_run_attempt": 0}),
+            ("invalid_sha", {"expected_head_sha": "bad"}),
+        )
+
+        def check(ctx, changes):
+            request = ctx.event("pr_merge.py")
             request["comment"].update(created_at="now", updated_at="now")
-            body = {"execution": "delete actions", "run_id": 12,
-                    "expected_head_sha": SHA, "expected_run_attempt": 1}
+            body = dict(ctx.target(), execution="delete actions")
             request["comment"]["body"] = "/execute " + json.dumps(dict(body, **changes))
             dispatch = Mock()
             self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch)
             dispatch.assert_not_called()
+
+        self.run_cases(cases, check)
 
     def test_actions_worker_revalidates_source_comment(self):
         context = self.ctx.approval_event(bot=True)
@@ -201,11 +254,6 @@ class DeletionContract(TestSuite):
                 self.assert_rejected(validate)
                 comment.clear()
                 comment.update(original)
-
-    def test_actions_worker_rejects_bot_without_approval(self):
-        context = self.ctx.approval_event(bot=True)
-        self.assert_rejected(self.ctx.validate_context, context, REPO, REF, "41898282",
-                             self.ctx.workflow_ref)
 
 
     def test_actions_context_normalizes_single_and_batch(self):
