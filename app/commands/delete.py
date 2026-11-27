@@ -5,7 +5,8 @@ import json
 import os
 import re
 
-from app.commands.model import Command, summary
+from app.commands.model import (Command, pr_context, read_event, report,
+                                repository_context, require_event)
 from app.registry import register
 from github.delete import delete
 from github.model import github_api, delete_resource
@@ -59,11 +60,12 @@ def validate_actions_context(event, repository, ref, actor_id, workflow_ref,
 
 @register("delete")
 class DeleteCommand(Command):
-    help = "Delete explicitly approved GitHub Actions runs"
+    help = "Delete a reviewed PR branch or explicitly approved Actions runs"
+    workflow_execution = ("branch_delete.py", "branch")
 
     @staticmethod
     def configure(parser):
-        parser.add_argument("target", choices=("actions",))
+        parser.add_argument("target", choices=("branch", "actions"))
         parser.add_argument("--run-id", type=int)
         parser.add_argument("--runs", default="")
         parser.add_argument("--expected-head-sha")
@@ -73,12 +75,20 @@ class DeleteCommand(Command):
 
     @staticmethod
     def execute(args):
-        if (os.environ["GITHUB_EVENT_NAME"] != "workflow_dispatch" or
-                os.environ["GITHUB_RUN_ATTEMPT"] != "1"):
-            raise ValueError("Requires a fresh workflow dispatch.")
-        with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
-            event = json.load(stream)
-        repository, ref = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF"]
+        if args.target == "branch":
+            if (args.runs or args.request_id or args.source_pr or
+                    any(value is not None for value in
+                        (args.run_id, args.expected_head_sha, args.expected_run_attempt))):
+                raise ValueError("Actions inputs are not valid for branch deletion.")
+            number, sha, repository, ref = pr_context("branch_delete.py")
+            remote = os.environ["GITHUB_SERVER_URL"].rstrip("/") + f"/{repository}.git"
+            report(delete("branch", api=github_api, repository=repository,
+                          run_ref=ref, number=number, sha=sha, remote=remote))
+            return 0
+
+        require_event("workflow_dispatch", fresh=True)
+        event = read_event()
+        repository, ref = repository_context()
         if args.runs:
             if any(value is not None for value in
                    (args.run_id, args.expected_head_sha, args.expected_run_attempt)):
@@ -92,10 +102,6 @@ class DeleteCommand(Command):
         validate_actions_context(
             event, repository, ref, os.environ["GITHUB_ACTOR_ID"],
             os.environ["GITHUB_WORKFLOW_REF"], args.request_id, args.source_pr, inputs)
-
-        def report(message):
-            print(message, flush=True)
-            summary(message + "\n")
 
         common = dict(api=github_api, remove=delete_resource, repository=repository,
                       run_ref=ref, current_run_id=int(os.environ["GITHUB_RUN_ID"]))

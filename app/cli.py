@@ -14,9 +14,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python3 -m app")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, command in configured_commands().items():
-        subparser = subparsers.add_parser(name, help=command.help)
-        command.configure(subparser)
-        subparser.set_defaults(handler=command.execute)
+        command.bind(subparsers, name)
     args = parser.parse_args(argv)
     try:
         return args.handler(args)

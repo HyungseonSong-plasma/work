@@ -4,13 +4,12 @@
 import os
 
 from app.registry import register
-from app.commands.model import Command
+from app.commands.model import Command, require_event
 from scripts.execute import resolve_execution, run_execution, run_stage
 
 
 def execute(single, stage):
-    if os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch") != "workflow_dispatch":
-        raise ValueError("Execution requires a workflow dispatch.")
+    require_event("workflow_dispatch", fresh=True)
     scripts = resolve_execution(
         os.environ["EXECUTION"], os.environ["EXECUTION_INPUTS"],
     )

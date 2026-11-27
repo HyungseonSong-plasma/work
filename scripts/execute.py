@@ -40,10 +40,17 @@ def resolve_execution(expression, parameters):
 
 def run_execution(scripts, run=subprocess.run):
     """Run in input order; never start a later script after failure."""
+    from app.registry import workflow_commands
+    from app import commands  # Register trusted implementations.
+
+    routes = workflow_commands()
+    scripts = tuple(scripts)
+    if any(script.name not in routes for script in scripts):
+        raise ValueError("Unknown execution binding.")
     for script in scripts:
         print(f"Executing {script.name}", flush=True)
         result = run(
-            [sys.executable, "-m", "app", "task", script.name],
+            [sys.executable, "-m", "app", *routes[script.name]],
             cwd=Path(__file__).resolve().parents[1], check=False,
         )
         if result.returncode != 0:
