@@ -4,7 +4,7 @@
 from unittest.mock import Mock, MagicMock, patch
 
 from github import trigger
-from github.model import WorkflowRegistry
+from github.framework.registry import WorkflowRegistry
 from tests.framework.model import TestSuite, WorkflowTestContext, REPO, REF
 from tests.framework.registry import register
 
@@ -105,7 +105,7 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_shared_validation_rejects_invalid_types(self):
-        from github.model import validate_sha, validate_pr_number, require_default_ref
+        from github.framework.model import validate_sha, validate_pr_number, require_default_ref
         cases = (
             ("pr_boolean", validate_pr_number, (True,)),
             ("pr_none", validate_pr_number, (None,)),
@@ -139,7 +139,7 @@ class RoutingContract(TestSuite):
         cases = (("json_get", "GET", None), ("json_put", "PUT", {"sha": "a" * 40}))
 
         def check(ctx, method, payload):
-            from github.model import github_api
+            from github.framework.transport import github_api
             from io import BytesIO
             import os
             response = MagicMock()
@@ -173,7 +173,7 @@ class RoutingContract(TestSuite):
         )
 
         def check(ctx, method, status, allowed):
-            from github.model import dispatch_workflow, delete_resource
+            from github.framework.transport import dispatch_workflow, delete_resource
             import os
             response = MagicMock()
             response.__enter__.return_value.status = status
@@ -208,7 +208,7 @@ class RoutingContract(TestSuite):
                  ("json_timeout", "json"))
 
         def check(ctx, operation):
-            from github.model import dispatch_workflow, delete_resource, github_api
+            from github.framework.transport import dispatch_workflow, delete_resource, github_api
             import os
             send = Mock(side_effect=TimeoutError("ambiguous response"))
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
@@ -227,7 +227,7 @@ class RoutingContract(TestSuite):
 
     def test_rest_json_transport_rejects_invalid_response_and_closes(self):
         def check(ctx):
-            from github.model import github_api
+            from github.framework.transport import github_api
             from io import BytesIO
             import json
             import os

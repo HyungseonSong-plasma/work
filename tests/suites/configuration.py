@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from app.framework.registry import configured_commands
 from config import load_names, load_registry, require_deletion
-from github.model import WorkflowRegistry
+from github.framework.registry import WorkflowRegistry
 from app.framework.registry import execution_ids
 from tests.framework.model import TestSuite, ConfigurationTestContext
 from tests.framework.registry import register

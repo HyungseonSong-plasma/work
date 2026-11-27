@@ -4,9 +4,11 @@
 import json
 
 from config import load_registry
-from github.delete import validate_actions_targets
-from github.model import (WorkflowRegistry, dispatch_workflow, validate_sha,
-                          validate_pr_number, require_default_ref, parse_execute_comment)
+from github.actions import actions_request
+from github.framework.registry import WorkflowRegistry
+from github.framework.transport import dispatch_workflow
+from github.framework.model import (validate_sha, validate_pr_number, require_default_ref,
+                                    parse_execute_comment)
 from app.framework.registry import execution_ids, resolve_execution
 
 
@@ -56,23 +58,6 @@ def _comment_parameters(event, request):
         "pr_number": number,
         "expected_head_sha": sha,
     })
-
-
-def actions_request(request):
-    """Validate the single-run or exact batch request."""
-    if not isinstance(request, dict) or request.get("execution") != "delete actions":
-        raise ValueError("Invalid Actions deletion request.")
-    if set(request) == {"execution", "runs"}:
-        targets = validate_actions_targets(request["runs"])
-        return {"runs": json.dumps(targets, sort_keys=True, separators=(",", ":"))}
-    if set(request) != {
-        "execution", "run_id", "expected_head_sha", "expected_run_attempt"
-    }:
-        raise ValueError("Invalid Actions deletion request.")
-    target = {key: request[key] for key in
-              ("run_id", "expected_head_sha", "expected_run_attempt")}
-    validate_actions_targets([target])
-    return {key: str(value) for key, value in target.items()}
 
 
 def route_actions(event, default, request_id, request):

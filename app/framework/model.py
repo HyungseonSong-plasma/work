@@ -8,7 +8,8 @@ import os
 import re
 from pathlib import Path
 
-from github.model import github_api, require_default_ref, parse_execute_comment, validate_pr_number
+from github.framework.transport import github_api
+from github.framework.model import require_default_ref, parse_execute_comment, validate_pr_number
 
 
 @dataclass(frozen=True)
@@ -176,7 +177,7 @@ class PRContext(Context):
         self.execution_id = execution
 
     def validate(self):
-        from github.model import parse_pr_parameters
+        from github.framework.model import parse_pr_parameters
         from app.framework.registry import resolve_execution
 
         self.require_event("workflow_dispatch", fresh=True)
@@ -197,7 +198,7 @@ class ActionsContext(Context):
         self.api = api
 
     def validate(self):
-        from github.trigger import actions_request
+        from github.actions import actions_request
 
         self.require_event("workflow_dispatch", fresh=True)
         args = self.args
@@ -222,7 +223,7 @@ class ActionsContext(Context):
         return self
 
     def _validate_approval(self, event, inputs):
-        from github.trigger import actions_request
+        from github.actions import actions_request
 
         repository, ref = self.repository, self.ref
         actor_id, workflow_ref = self.actor_id, self.workflow_ref
