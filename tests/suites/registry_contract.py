@@ -467,3 +467,71 @@ class RegistryContract(TestSuite):
         result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_frame_contract_rejects_invalid_declarations(self):
+        from libs.frame import FrameContract
+        for stages in ([], (), ("",), ("not a name",), ("prepare", 1)):
+            with self.subTest(stages=stages):
+                with self.assertRaises(TypeError):
+                    FrameContract(stages)
+        with self.assertRaisesRegex(ValueError, "Duplicate lifecycle stage"):
+            FrameContract(("prepare", "prepare"))
+
+    def test_frame_binding_requires_exact_callbacks_before_execution(self):
+        from libs.frame import FrameContract
+        contract = FrameContract(("prepare", "mutate"))
+        prepare = Mock()
+        for callbacks in ({"prepare": prepare}, {"prepare": prepare, "mutate": None},
+                          {"prepare": prepare, "mutate": lambda: None},
+                          {"prepare": prepare, "mutate": lambda ctx: ctx, "extra": prepare}):
+            with self.subTest(callbacks=callbacks):
+                with self.assertRaises(TypeError):
+                    contract.bind(**callbacks)
+        prepare.assert_not_called()
+
+    def test_frame_order_is_contract_owned_and_threads_results(self):
+        from libs.frame import FrameContract
+        observed = Mock()
+        prepare = Mock(side_effect=lambda ctx: ctx + 1)
+        validate = Mock(side_effect=lambda ctx: ctx * 2)
+        mutate = Mock(side_effect=lambda ctx: str(ctx))
+        for name, callback in (("prepare", prepare), ("validate", validate), ("mutate", mutate)):
+            observed.attach_mock(callback, name)
+        frame = FrameContract(("prepare", "validate", "mutate")).bind(
+            mutate=mutate, prepare=prepare, validate=validate)
+        self.assertEqual(frame.execute(3), "8")
+        from unittest.mock import call
+        self.assertEqual(observed.mock_calls, [call.prepare(3), call.validate(4), call.mutate(8)])
+
+    def test_frame_stops_at_every_failed_stage(self):
+        from libs.frame import FrameContract
+        names = ("prepare", "review", "validate", "mutate", "confirm")
+        for failure in names:
+            with self.subTest(failure=failure):
+                callbacks = {name: Mock(side_effect=ValueError(name) if name == failure
+                                        else lambda ctx: ctx) for name in names}
+                frame = FrameContract(names).bind(**callbacks)
+                marker = object()
+                with self.assertRaisesRegex(ValueError, failure):
+                    frame.execute(marker)
+                for index, name in enumerate(names):
+                    if index <= names.index(failure):
+                        callbacks[name].assert_called_once_with(marker)
+                    else:
+                        callbacks[name].assert_not_called()
+
+    def test_frame_binding_is_immutable_and_runner_cannot_be_overridden(self):
+        from dataclasses import FrozenInstanceError
+        from libs.frame import Frame, FrameContract
+        contract = FrameContract(("prepare",))
+        frame = contract.bind(prepare=lambda ctx: ctx)
+        with self.assertRaises(FrozenInstanceError):
+            contract.stages = ("mutate",)
+        with self.assertRaises(FrozenInstanceError):
+            frame.callbacks = ()
+        with self.assertRaises(TypeError):
+            class Bypass(Frame):
+                def execute(self, context):
+                    return None
+        with self.assertRaises(TypeError):
+            Frame(contract, ())

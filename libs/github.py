@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from urllib.request import Request, urlopen
 
-from libs.frame import Registry, validate_unique
+from libs.frame import FrameContract, Registry, validate_unique
 
 
 # Input and remote-state validation
@@ -121,42 +121,54 @@ class WorkflowRegistry:
 
 # REST and isolated Git transport
 
-def _request(method, endpoint, payload=None):
-    """Build a request using the current workflow's scoped token."""
-    url = os.environ["GITHUB_API_URL"].rstrip("/") + "/" + endpoint
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    return Request(
-        url,
-        data=data,
-        method=method,
-        headers={
-            "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
+class GitHubClient:
+    """Explicit REST response contracts over one request lifecycle."""
+
+    def __init__(self, send=urlopen):
+        self.send = send
+
+    @staticmethod
+    def _request(method, endpoint, payload=None):
+        """Read the current workflow's scoped token at request time."""
+        url = os.environ["GITHUB_API_URL"].rstrip("/") + "/" + endpoint
+        data = json.dumps(payload).encode("utf-8") if payload is not None else None
+        return Request(
+            url,
+            data=data,
+            method=method,
+            headers={
+                "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+
+    def _execute(self, method, endpoint, payload, *, consume):
+        """Open one response, consume it inside its scope, never retry."""
+        with self.send(self._request(method, endpoint, payload), timeout=30) as response:
+            return consume(response)
+
+    def request(self, method, endpoint, payload=None):
+        return self._execute(method, endpoint, payload, consume=json.load)
+
+    @staticmethod
+    def _confirm(response, allowed, operation):
+        if response.status not in allowed:
+            raise ValueError(f"Unexpected {operation} status: {response.status}")
+
+    def dispatch(self, repository, workflow, payload):
+        endpoint = f"repos/{repository}/actions/workflows/{workflow}/dispatches"
+        return self._execute("POST", endpoint, payload,
+                             consume=lambda response: self._confirm(response, (200, 204), "dispatch"))
+
+    def delete(self, endpoint):
+        return self._execute("DELETE", endpoint, None,
+                             consume=lambda response: self._confirm(response, (204,), "deletion"))
 
 
-def github_api(method, endpoint, payload=None, send=urlopen):
-    """Call a GitHub REST endpoint that returns a JSON response."""
-    with send(_request(method, endpoint, payload), timeout=30) as response:
-        return json.load(response)
-
-
-def dispatch_workflow(repository, workflow, payload, send=urlopen):
-    """Submit a workflow once without polling or retrying ambiguous responses."""
-    endpoint = f"repos/{repository}/actions/workflows/{workflow}/dispatches"
-    with send(_request("POST", endpoint, payload), timeout=30) as response:
-        if response.status not in (200, 204):
-            raise ValueError(f"Unexpected dispatch status: {response.status}")
-
-
-def delete_resource(endpoint, send=urlopen):
-    """Delete one REST resource; require explicit HTTP 204 confirmation."""
-    with send(_request("DELETE", endpoint), timeout=30) as response:
-        if response.status != 204:
-            raise ValueError(f"Unexpected deletion status: {response.status}")
+# Stateless default binding: environment and credentials are read only on requests.
+CLIENT = GitHubClient()
 
 
 @contextmanager
@@ -177,3 +189,7 @@ def git_session():
             return result
 
         yield git
+
+
+# Domain-owned lifecycle; concrete operations bind the named stages.
+GUARDED_MUTATION = FrameContract(("prepare", "review", "validate", "mutate", "confirm"))

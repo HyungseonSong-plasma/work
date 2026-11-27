@@ -143,7 +143,7 @@ class RoutingContract(TestSuite):
         cases = (("json_get", "GET", None), ("json_put", "PUT", {"sha": "a" * 40}))
 
         def check(ctx, method, payload):
-            from libs.github import github_api
+            from libs.github import GitHubClient
             from io import BytesIO
             import os
             response = MagicMock()
@@ -151,7 +151,7 @@ class RoutingContract(TestSuite):
             send = Mock(return_value=response)
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test/",
                                          "GH_TOKEN": "offline-fixture"}, clear=True):
-                result = github_api(method, "repos/example/work", payload, send=send)
+                result = GitHubClient(send).request(method, "repos/example/work", payload)
             self.assertEqual(result, {"confirmed": True})
             send.assert_called_once()
             request = send.call_args.args[0]
@@ -177,18 +177,18 @@ class RoutingContract(TestSuite):
         )
 
         def check(ctx, method, status, allowed):
-            from libs.github import dispatch_workflow, delete_resource
+            from libs.github import GitHubClient
             import os
             response = MagicMock()
             response.__enter__.return_value.status = status
             send = Mock(return_value=response)
             if method == "POST":
-                operation = lambda: dispatch_workflow(REPO, "single_run.yml",
-                    {"ref": "main", "inputs": {"request_id": "comment-12"}}, send=send)
+                operation = lambda: GitHubClient(send).dispatch(REPO, "single_run.yml",
+                    {"ref": "main", "inputs": {"request_id": "comment-12"}})
                 endpoint = "/repos/example/work/actions/workflows/single_run.yml/dispatches"
                 data = b'{"ref": "main", "inputs": {"request_id": "comment-12"}}'
             else:
-                operation = lambda: delete_resource("repos/example/work/actions/runs/12", send=send)
+                operation = lambda: GitHubClient(send).delete("repos/example/work/actions/runs/12")
                 endpoint = "/repos/example/work/actions/runs/12"
                 data = None
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
@@ -212,18 +212,18 @@ class RoutingContract(TestSuite):
                  ("json_timeout", "json"))
 
         def check(ctx, operation):
-            from libs.github import dispatch_workflow, delete_resource, github_api
+            from libs.github import GitHubClient
             import os
             send = Mock(side_effect=TimeoutError("ambiguous response"))
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
                                          "GH_TOKEN": "offline-fixture"}, clear=True):
                 with self.assertRaisesRegex(TimeoutError, "ambiguous response"):
                     if operation == "dispatch":
-                        dispatch_workflow(REPO, "single_run.yml", {"ref": "main"}, send=send)
+                        GitHubClient(send).dispatch(REPO, "single_run.yml", {"ref": "main"})
                     elif operation == "delete":
-                        delete_resource("repos/example/work/actions/runs/12", send=send)
+                        GitHubClient(send).delete("repos/example/work/actions/runs/12")
                     else:
-                        github_api("PUT", "repos/example/work/pulls/7/merge", {"sha": "a" * 40}, send=send)
+                        GitHubClient(send).request("PUT", "repos/example/work/pulls/7/merge", {"sha": "a" * 40})
             send.assert_called_once()
             self.assertEqual(send.call_args.kwargs, {"timeout": 30})
 
@@ -231,7 +231,7 @@ class RoutingContract(TestSuite):
 
     def test_rest_json_transport_rejects_invalid_response_and_closes(self):
         def check(ctx):
-            from libs.github import github_api
+            from libs.github import GitHubClient
             from io import BytesIO
             import json
             import os
@@ -241,7 +241,7 @@ class RoutingContract(TestSuite):
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
                                          "GH_TOKEN": "offline-fixture"}, clear=True):
                 with self.assertRaises(json.JSONDecodeError):
-                    github_api("GET", "repos/example/work", send=send)
+                    GitHubClient(send).request("GET", "repos/example/work")
             send.assert_called_once()
             response.__exit__.assert_called_once()
             self.assertIs(response.__exit__.call_args.args[0], json.JSONDecodeError)

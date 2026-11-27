@@ -67,7 +67,8 @@ class ExecutionContract(TestSuite):
         @contextmanager
         def arrange(ctx):
             with ctx.patched_environment():
-                with patch.object(merge_command.merge, "merge_pr", return_value=SHA) as ctx.merge:
+                with patch.object(merge_command.merge, "MERGE") as ctx.merge:
+                    ctx.merge.execute.return_value = SHA
                     yield
 
         def act(ctx):
@@ -75,7 +76,8 @@ class ExecutionContract(TestSuite):
 
         def check(ctx, result):
             self.assertEqual(result, 0)
-            ctx.merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
+            ctx.merge.execute.assert_called_once_with(
+                merge_command.merge.MergeOperation(merge_command.CLIENT.request, REPO, REF, "7", SHA))
 
         self.run_contract(act, check, arrange=arrange)
 
@@ -98,7 +100,7 @@ class ExecutionContract(TestSuite):
             with ctx.patched_environment():
                 with patch.object(delete_command, "delete", return_value="Deleted branch") as call:
                     self.assertEqual(cli.main(["delete", "branch"]), 0)
-                    call.assert_called_once_with("branch", api=delete_command.github_api,
+                    call.assert_called_once_with("branch", api=delete_command.CLIENT.request,
                         repository=REPO, run_ref=REF, number="7", sha=SHA,
                         remote=f"https://github.com/{REPO}.git")
 
@@ -185,10 +187,10 @@ class ExecutionContract(TestSuite):
             with ctx.patched_environment(EXECUTION="pr_merge.py", **changes):
                 with patch.object(trigger_command, "dispatch_request") as dispatch, \
                         patch.object(execute_command, "run_execution") as run, \
-                        patch.object(merge_command.merge, "merge_pr") as merge, \
+                        patch.object(merge_command.merge, "MERGE") as merge, \
                         patch.object(delete_command, "delete") as delete:
                     self.assertEqual(cli.main(args), 1)
-                    for action in (dispatch, run, merge, delete):
+                    for action in (dispatch, run, merge.execute, delete):
                         action.assert_not_called()
 
         self.run_cases(cases, check)
@@ -236,12 +238,12 @@ class ExecutionContract(TestSuite):
 
     def test_merge_domain_exact_review_and_guarded_put(self):
         def check(ctx):
-            from github.merge import merge_pr
+            from github.merge import MERGE, MergeOperation
             root = "repos/example/work"
             endpoint = root + "/pulls/7"
             api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(),
                                     {"merged": True, "sha": "b" * 40}])
-            self.assertEqual(merge_pr(api, REPO, REF, 7, SHA), "b" * 40)
+            self.assertEqual(MERGE.execute(MergeOperation(api, REPO, REF, 7, SHA)), "b" * 40)
             self.assertEqual(api.call_args_list, [
                 call("GET", root), call("GET", endpoint),
                 call("PUT", endpoint + "/merge", {"sha": SHA, "merge_method": "merge"})])
@@ -254,9 +256,9 @@ class ExecutionContract(TestSuite):
                  ("uppercase_sha", 7, "A" * 40))
         # Each row supplies exactly the same independent reviewed input contract.
         def check(ctx, number, sha):
-            from github.merge import merge_pr
+            from github.merge import MERGE, MergeOperation
             api = Mock()
-            self.assert_rejected(merge_pr, api, REPO, REF, number, sha)
+            self.assert_rejected(MERGE.execute, MergeOperation(api, REPO, REF, number, sha))
             api.assert_not_called()
 
         self.run_cases(cases, check)
@@ -273,11 +275,11 @@ class ExecutionContract(TestSuite):
         )
 
         def check(ctx, ref, changes):
-            from github.merge import merge_pr
+            from github.merge import MERGE, MergeOperation
             pr = ctx.pull_request()
             pr.update(changes)
             api = Mock(side_effect=[{"default_branch": "main"}, pr])
-            self.assert_rejected(merge_pr, api, REPO, ref, "7", SHA)
+            self.assert_rejected(MERGE.execute, MergeOperation(api, REPO, ref, "7", SHA))
             expected = [call("GET", "repos/example/work")]
             if ref == REF:
                 expected.append(call("GET", "repos/example/work/pulls/7"))
@@ -292,10 +294,10 @@ class ExecutionContract(TestSuite):
                  ("missing_sha", {"merged": True}))
 
         def check(ctx, response):
-            from github.merge import merge_pr
+            from github.merge import MERGE, MergeOperation
             root = "repos/example/work"
             api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(), response])
-            self.assert_rejected(merge_pr, api, REPO, REF, "7", SHA)
+            self.assert_rejected(MERGE.execute, MergeOperation(api, REPO, REF, "7", SHA))
             self.assertEqual(api.call_args_list, [
                 call("GET", root), call("GET", root + "/pulls/7"),
                 call("PUT", root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"})])

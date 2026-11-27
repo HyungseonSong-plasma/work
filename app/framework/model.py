@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 from libs.frame import validate_callback, validate_overrides, validate_unique
-from libs.github import github_api
+from libs.github import CLIENT
 from libs.github import require_default_ref, parse_execute_comment, validate_pr_number
 
 
@@ -186,7 +186,7 @@ class PRContext(Context):
 class ActionsContext(Context):
     """Validate exact owner approval, then normalize single and batch targets."""
 
-    def __init__(self, args, env=None, api=github_api):
+    def __init__(self, args, env=None, api=CLIENT.request):
         super().__init__(env)
         self.args = args
         self.api = api

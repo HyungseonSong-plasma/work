@@ -1,6 +1,7 @@
 # FileRank: C
 """Shared framework mechanics; domain policies belong to their callers."""
 
+from dataclasses import dataclass
 from inspect import signature
 
 
@@ -58,3 +59,48 @@ def validate_overrides(implementation, base, names, *, error_type, message,
             expected = expected.__func__
         if actual is not expected:
             raise error_type(message.format(name=name))
+
+
+@dataclass(frozen=True)
+class FrameContract:
+    """Trusted ordered stage declaration, independent of domain policy."""
+
+    stages: tuple
+
+    def __post_init__(self):
+        if (type(self.stages) is not tuple or not self.stages
+                or any(type(name) is not str or not name.isidentifier()
+                       for name in self.stages)):
+            raise TypeError("Expected a nonempty tuple of stage names.")
+        validate_unique(self.stages, "Duplicate lifecycle stage.")
+
+    def bind(self, **callbacks):
+        """Bind exactly the declared callbacks, never their caller-supplied order."""
+        if set(callbacks) != set(self.stages):
+            raise TypeError("Lifecycle callbacks must match the declared stages.")
+        return Frame(self, tuple(callbacks[name] for name in self.stages))
+
+
+@dataclass(frozen=True)
+class Frame:
+    """A bound lifecycle; each callback accepts the prior stage's result."""
+
+    contract: FrameContract
+    callbacks: tuple
+
+    def __init_subclass__(cls, **kwargs):
+        raise TypeError("Frame execution is framework-owned; use composition.")
+
+    def __post_init__(self):
+        if (type(self.contract) is not FrameContract or type(self.callbacks) is not tuple
+                or len(self.callbacks) != len(self.contract.stages)):
+            raise TypeError("Invalid bound lifecycle.")
+        for name, callback in zip(self.contract.stages, self.callbacks):
+            validate_callback(callback, 1, error_type=TypeError,
+                              message=f"Invalid lifecycle callback: {name}.")
+
+    def execute(self, context):
+        """Execute once in declared order; propagate failure before later stages."""
+        for callback in self.callbacks:
+            context = callback(context)
+        return context
