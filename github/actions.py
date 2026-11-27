@@ -28,26 +28,41 @@ def actions_request(request):
     return {key: str(value) for key, value in target.items()}
 
 
+def _positive_int(value):
+    return type(value) is int and value > 0
+
+
+def _workflow_path(value):
+    return isinstance(value, str) and re.fullmatch(
+        r"\.github/workflows/[A-Za-z0-9_-]+\.ya?ml", value)
+
+
+def _unique_items(values, valid_item, *, nonempty=False):
+    return (isinstance(values, list) and (not nonempty or bool(values))
+            and all(valid_item(value) for value in values)
+            and len(values) == len(set(values)))
+
+
+# Field order is error precedence. Shape is derived from the same declaration.
+_POLICY_RULES = (
+    ("max_batch", lambda value: type(value) is int and 1 <= value <= 50,
+     "Invalid batch limit."),
+    ("keep_successful", lambda value: type(value) is int and 1 <= value <= 20,
+     "Invalid retention count."),
+    ("protected_workflows", lambda values: _unique_items(values, _workflow_path, nonempty=True),
+     "Invalid retained workflow paths."),
+    ("pinned_run_ids", lambda values: _unique_items(values, _positive_int),
+     "Invalid pinned run IDs."),
+)
+
+
 def actions_policy():
     policy = load_registry("actions_policy")
-    if not isinstance(policy, dict) or set(policy) != {
-        "max_batch", "keep_successful", "protected_workflows", "pinned_run_ids"
-    }:
+    if not isinstance(policy, dict) or set(policy) != {key for key, _, _ in _POLICY_RULES}:
         raise ValueError("Invalid Actions policy.")
-    maximum, keep = policy["max_batch"], policy["keep_successful"]
-    if type(maximum) is not int or not 1 <= maximum <= 50:
-        raise ValueError("Invalid batch limit.")
-    if type(keep) is not int or not 1 <= keep <= 20:
-        raise ValueError("Invalid retention count.")
-    paths, pins = policy["protected_workflows"], policy["pinned_run_ids"]
-    if (not isinstance(paths, list) or not paths or any(
-            not isinstance(path, str) or not re.fullmatch(
-                r"\.github/workflows/[A-Za-z0-9_-]+\.ya?ml", path)
-            for path in paths) or len(paths) != len(set(paths))):
-        raise ValueError("Invalid retained workflow paths.")
-    if (not isinstance(pins, list) or any(type(pin) is not int or pin <= 0
-            for pin in pins) or len(pins) != len(set(pins))):
-        raise ValueError("Invalid pinned run IDs.")
+    for key, valid, message in _POLICY_RULES:
+        if not valid(policy[key]):
+            raise ValueError(message)
     return policy
 
 
@@ -59,8 +74,7 @@ def validate_actions_targets(targets, policy=None):
     for target in targets:
         if not isinstance(target, dict) or set(target) != set(_TARGET_FIELDS):
             raise ValueError("Invalid Actions target.")
-        if any(type(target[key]) is not int or target[key] <= 0
-               for key in ("run_id", "expected_run_attempt")):
+        if not all(_positive_int(target[key]) for key in ("run_id", "expected_run_attempt")):
             raise ValueError("Expected positive integer run ID and attempt.")
         validate_sha(target["expected_head_sha"])
         if target["run_id"] in ids:
