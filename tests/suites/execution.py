@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
-from app.commands.model import pr_context
+from app.commands.model import Context, PRContext
 from scripts import execute
 from tests.suites.model import TestSuite, PARAMS, REPO, REF, ROOT, SHA
 from tests.registry import register
@@ -49,7 +49,7 @@ class ExecutionContract(TestSuite):
     def test_pr_parameter_validation(self):
         with patch.dict(os.environ, {"EXECUTION_INPUTS": "{}", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1"}, clear=True):
             with self.assertRaises(ValueError):
-                pr_context("pr_merge.py")
+                PRContext("pr_merge.py").validate()
 
     def test_merge_adapter(self):
         with patch.dict(os.environ, {"EXECUTION_INPUTS": PARAMS, "GITHUB_EVENT_NAME": "workflow_dispatch",
@@ -94,4 +94,21 @@ class ExecutionContract(TestSuite):
         for event_name, attempt in (("issue_comment", "1"), ("workflow_dispatch", "2")):
             with patch.dict(os.environ, {"GITHUB_EVENT_NAME": event_name,
                                          "GITHUB_RUN_ATTEMPT": attempt}, clear=True):
-                self.assert_rejected(pr_context, "pr_merge.py")
+                self.assert_rejected(PRContext("pr_merge.py").validate)
+
+
+    def test_context_injected_environment_is_isolated(self):
+        env = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF,
+               "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1"}
+        ctx = Context(env)
+        env["GITHUB_REF"] = "other"
+        self.assertIs(ctx.require_event("workflow_dispatch", fresh=True), ctx)
+        self.assertEqual((ctx.repository, ctx.ref), (REPO, REF))
+
+    def test_pr_context_validated_attributes(self):
+        ctx = PRContext("pr_merge.py", {
+            "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1",
+            "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF, "EXECUTION_INPUTS": PARAMS,
+        }).validate()
+        self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
+                         ("7", SHA, REPO, REF))

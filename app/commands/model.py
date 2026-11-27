@@ -32,91 +32,162 @@ class Command(ABC):
         raise NotImplementedError
 
 
-def summary(message):
-    """Append a result to the current GitHub Actions job summary, if present."""
-    path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if path:
-        with Path(path).open("a", encoding="utf-8") as stream:
-            stream.write(message)
+class Context:
+    """Per-invocation environment, event and reporting; no mutation operations."""
+
+    def __init__(self, env=None):
+        self.env = dict(os.environ if env is None else env)
+
+    @property
+    def repository(self):
+        return self.env["GITHUB_REPOSITORY"]
+
+    @property
+    def ref(self):
+        return self.env["GITHUB_REF"]
+
+    @property
+    def actor_id(self):
+        return self.env["GITHUB_ACTOR_ID"]
+
+    @property
+    def workflow_ref(self):
+        return self.env["GITHUB_WORKFLOW_REF"]
+
+    @property
+    def run_id(self):
+        return int(self.env["GITHUB_RUN_ID"])
+
+    @property
+    def remote(self):
+        return self.env["GITHUB_SERVER_URL"].rstrip("/") + f"/{self.repository}.git"
+
+    @property
+    def execution_inputs(self):
+        return self.env["EXECUTION_INPUTS"]
+
+    def require_event(self, name, fresh=False):
+        if self.env["GITHUB_EVENT_NAME"] != name or (
+                fresh and self.env["GITHUB_RUN_ATTEMPT"] != "1"):
+            raise ValueError(f"Requires {name}" + (" (first attempt)." if fresh else "."))
+        return self
+
+    def read_event(self):
+        with open(self.env["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
+            return json.load(stream)
+
+    def resolve_execution(self):
+        from scripts.execute import resolve_execution
+
+        return resolve_execution(self.env["EXECUTION"], self.execution_inputs)
+
+    def summary(self, message):
+        path = self.env.get("GITHUB_STEP_SUMMARY")
+        if path:
+            with Path(path).open("a", encoding="utf-8") as stream:
+                stream.write(message)
+
+    def report(self, message, detail=None):
+        print(message, flush=True)
+        self.summary((message if detail is None else detail) + "\n")
 
 
-def require_event(name, fresh=False):
-    """Validate the event contract without inferring authorization."""
-    if os.environ["GITHUB_EVENT_NAME"] != name or (
-            fresh and os.environ["GITHUB_RUN_ATTEMPT"] != "1"):
-        raise ValueError(f"Requires {name}" + (" (first attempt)." if fresh else "."))
+class PRContext(Context):
+    """Validated parameters for one explicitly registered PR execution."""
+
+    def __init__(self, execution, env=None):
+        super().__init__(env)
+        self.execution = execution
+
+    def validate(self):
+        from github.model import parse_pr_parameters
+        from scripts.execute import resolve_execution
+
+        self.require_event("workflow_dispatch", fresh=True)
+        resolve_execution(self.execution, self.execution_inputs)
+        number, sha = parse_pr_parameters(self.execution_inputs)
+        # Check required repository fields before publishing validated parameters.
+        if not self.repository or not self.ref:
+            raise ValueError("Missing repository context.")
+        self.number, self.sha = number, sha
+        return self
 
 
-def read_event():
-    with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
-        return json.load(stream)
+class ActionsContext(Context):
+    """Validate exact deletion approval before normalizing single/batch targets."""
 
+    def __init__(self, args, env=None, api=github_api):
+        super().__init__(env)
+        self.args = args
+        self.api = api
 
-def repository_context():
-    return os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_REF"]
+    def validate(self):
+        from github.trigger import actions_request
 
+        self.require_event("workflow_dispatch", fresh=True)
+        args = self.args
+        if args.runs:
+            if any(value is not None for value in
+                   (args.run_id, args.expected_head_sha, args.expected_run_attempt)):
+                raise ValueError("Choose single or batch, not both.")
+            request = {"execution": "delete actions", "runs": json.loads(args.runs)}
+        else:
+            request = {"execution": "delete actions", "run_id": args.run_id,
+                       "expected_head_sha": args.expected_head_sha,
+                       "expected_run_attempt": args.expected_run_attempt}
+        inputs = actions_request(request)
+        self._validate_authorization(self.read_event(), inputs)
+        # Preserve the original approval format until exact authorization succeeds.
+        targets = request["runs"] if args.runs else [
+            {key: value for key, value in request.items() if key != "execution"}
+        ]
+        self.targets = targets
+        return self
 
-def pr_context(execution):
-    """Validate a fixed PR execution identity and its shared input contract."""
-    from github.model import parse_pr_parameters
-    from scripts.execute import resolve_execution
+    def _validate_authorization(self, event, inputs):
+        from github.trigger import actions_request
 
-    require_event("workflow_dispatch", fresh=True)
-    raw = os.environ["EXECUTION_INPUTS"]
-    resolve_execution(execution, raw)
-    number, sha = parse_pr_parameters(raw)
-    repository, ref = repository_context()
-    return number, sha, repository, ref
-
-
-def report(message, detail=None):
-    print(message, flush=True)
-    summary((message if detail is None else detail) + "\n")
-
-
-def validate_actions_context(event, repository, ref, actor_id, workflow_ref,
-                             request_id="", source_pr="", inputs=None, api=github_api):
-    """Revalidate the dedicated Actions worker and exact owner approval."""
-    from github.trigger import actions_request
-
-    repo = event["repository"]
-    owner = str(repo["owner"]["id"])
-    if not (
-        repo["full_name"] == repository
-        and ref == f"refs/heads/{repo['default_branch']}"
-        and workflow_ref == f"{repository}/.github/workflows/actions_delete.yml@{ref}"
-    ):
-        raise ValueError("Unauthorized Actions deletion workflow.")
-    sender = event["sender"]
-    if str(sender["id"]) != actor_id:
-        raise ValueError("Workflow actor mismatch.")
-    if not request_id and not source_pr:
-        if actor_id != owner:
-            raise ValueError("Manual deletion requires the owner.")
-        return
-    if not re.fullmatch(r"comment-[1-9][0-9]*", request_id) or not re.fullmatch(
-            r"[1-9][0-9]*", source_pr):
-        raise ValueError("Invalid source comment or PR.")
-    if actor_id != owner and not (
-        actor_id == "41898282" and sender["login"] == "github-actions[bot]"
-    ):
-        raise ValueError("Unauthorized dispatch actor.")
-    root = f"repos/{repository}"
-    comment_id = int(request_id.split("-", 1)[1])
-    comment = api("GET", f"{root}/issues/comments/{comment_id}")
-    pr = api("GET", f"{root}/pulls/{source_pr}")
-    api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
-    if not (
-        comment["id"] == comment_id
-        and comment["user"]["id"] == repo["owner"]["id"]
-        and comment["author_association"] == "OWNER"
-        and comment["created_at"] == comment["updated_at"]
-        and comment["issue_url"] == f"{api_url}/{root}/issues/{source_pr}"
-        and pr["number"] == int(source_pr)
-        and pr["base"]["repo"]["full_name"] == repository
-        and comment["body"].startswith("/execute ")
-    ):
-        raise ValueError("Source comment is not an unchanged owner PR request.")
-    request = json.loads(comment["body"][len("/execute "):])
-    if actions_request(request) != inputs:
-        raise ValueError("Source approval does not match dispatch inputs.")
+        repository, ref = self.repository, self.ref
+        actor_id, workflow_ref = self.actor_id, self.workflow_ref
+        request_id, source_pr = self.args.request_id, self.args.source_pr
+        repo = event["repository"]
+        owner = str(repo["owner"]["id"])
+        if not (
+            repo["full_name"] == repository
+            and ref == f"refs/heads/{repo['default_branch']}"
+            and workflow_ref == f"{repository}/.github/workflows/actions_delete.yml@{ref}"
+        ):
+            raise ValueError("Unauthorized Actions deletion workflow.")
+        sender = event["sender"]
+        if str(sender["id"]) != actor_id:
+            raise ValueError("Workflow actor mismatch.")
+        if not request_id and not source_pr:
+            if actor_id != owner:
+                raise ValueError("Manual deletion requires the owner.")
+            return
+        if not re.fullmatch(r"comment-[1-9][0-9]*", request_id) or not re.fullmatch(
+                r"[1-9][0-9]*", source_pr):
+            raise ValueError("Invalid source comment or PR.")
+        if actor_id != owner and not (
+            actor_id == "41898282" and sender["login"] == "github-actions[bot]"
+        ):
+            raise ValueError("Unauthorized dispatch actor.")
+        root = f"repos/{repository}"
+        comment_id = int(request_id.split("-", 1)[1])
+        comment = self.api("GET", f"{root}/issues/comments/{comment_id}")
+        pr = self.api("GET", f"{root}/pulls/{source_pr}")
+        api_url = self.env.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+        if not (
+            comment["id"] == comment_id
+            and comment["user"]["id"] == repo["owner"]["id"]
+            and comment["author_association"] == "OWNER"
+            and comment["created_at"] == comment["updated_at"]
+            and comment["issue_url"] == f"{api_url}/{root}/issues/{source_pr}"
+            and pr["number"] == int(source_pr)
+            and pr["base"]["repo"]["full_name"] == repository
+            and comment["body"].startswith("/execute ")
+        ):
+            raise ValueError("Source comment is not an unchanged owner PR request.")
+        request = json.loads(comment["body"][len("/execute "):])
+        if actions_request(request) != inputs:
+            raise ValueError("Source approval does not match dispatch inputs.")
