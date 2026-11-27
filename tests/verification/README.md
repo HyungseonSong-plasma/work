@@ -29,3 +29,5 @@ Use the comparator from the reviewed src-layout checkout. It selects exact legac
 ## D5 QA
 
 The independent migration comparator self-test covers the complete 1697-record shape and the exact sixteen reviewed deltas. Negative cases reject wrong CLI output, argv, cwd, exit status, missing records/deltas and unrelated changes. The packaging probe also checks wheel RECORD integrity, universal wheel tag and actual child invocation with a poisoned PYTHONPATH fixture (no remote credentials/event). Use a clean environment and a reviewed backend wheelhouse; do not run verification with Python optimization enabled. Archive SHA256 values are build observations, not a reproducible-build guarantee.
+
+The clean-import check compares platform namespaces before and after installation; only the pre-existing Windows Python base-prefix `libs` namespace is allowed. The archive allowlist remains exact and independent of the environment.

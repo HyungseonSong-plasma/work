@@ -33,6 +33,7 @@ PAYLOAD = SOURCE | RESOURCES
 # This runs as a real file so SuiteRegistry can inspect the test method source.
 SMOKE = r'''
 import io
+import json
 import os
 import sys
 import unittest
@@ -50,8 +51,24 @@ from work.libs.command import Command, CommandRegistry, local_plan
 from work.libs.workflow import Context
 
 assert Path(work.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
-for name in ("libs", "app", "github", "config", "tests"):
-    assert find_spec(name) is None, name
+def top_level_specs():
+    found = {}
+    for name in ("libs", "app", "github", "config", "tests"):
+        spec = find_spec(name)
+        found[name] = None if spec is None else [
+            spec.origin, [str(Path(p).resolve()) for p in (spec.submodule_search_locations or ())]]
+    return found
+
+before = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+after = top_level_specs()
+assert before == after, (before, after)
+for name, spec in before.items():
+    if spec is not None:
+        # Windows Python ships its own base-prefix libs namespace directory.
+        assert sys.platform == "win32" and name == "libs", (name, spec)
+        assert spec[0] is None and spec[1], spec
+        assert all(Path(p).is_relative_to(Path(sys.base_prefix).resolve()) for p in spec[1]), spec
+print("Top-level import baseline unchanged:", before, flush=True)
 metadata = distribution("work-framework")
 assert metadata.version == "0.1.0.dev0"
 assert metadata.metadata["Requires-Python"] == ">=3.11"
@@ -209,11 +226,25 @@ def verify_install(artifact, outside):
     env = outside / ("wheel-env" if artifact.suffix == ".whl" else "sdist-env")
     run(sys.executable, "-m", "venv", env, cwd=outside)
     python = env / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    baseline = outside / (env.name + "-imports.json")
+    # Capture platform-provided namespaces before installing anything.
+    code = """import json
+from importlib.util import find_spec
+from pathlib import Path
+found = {}
+for name in ("libs", "app", "github", "config", "tests"):
+    spec = find_spec(name)
+    found[name] = None if spec is None else [
+        spec.origin, [str(Path(p).resolve()) for p in (spec.submodule_search_locations or ())]]
+print(json.dumps(found))
+"""
+    baseline.write_bytes(subprocess.check_output(
+        [str(python), "-I", "-c", code], cwd=outside, timeout=30))
     run(python, "-m", "pip", "install", "--no-deps", artifact, cwd=outside)
     run(python, "-m", "pip", "check", cwd=outside)
     script = outside / "smoke.py"
     script.write_text(SMOKE, encoding="utf-8")
-    run(python, "-I", script, cwd=outside)
+    run(python, "-I", script, baseline, cwd=outside)
     run(python, "-I", "-m", "work", "--help", cwd=outside)
     console = env / ("Scripts/work.exe" if sys.platform == "win32" else "bin/work")
     run(console, "--help", cwd=outside)
