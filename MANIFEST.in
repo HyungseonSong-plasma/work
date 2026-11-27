@@ -1,0 +1,9 @@
+# FileRank: C
+include pyproject.toml README.md MANIFEST.in
+prune app
+prune github
+prune config
+prune tests
+prune .github
+exclude .gitignore
+global-exclude *.py[cod]
