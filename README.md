@@ -20,12 +20,12 @@ Only the explicitly requested operations run; ordinary PR merges do not automati
 
 ### Chat and scheduled execution
 
-An owner-authored top-level comment on the target PR can request execution without opening the Actions UI. The literal delimiter ` - ` routes to Serial Run; otherwise Single Run handles the request. Both workflows receive the comment event, but only the matching workflow executes a job (the other appears skipped). Python independently validates the full chain and expected script count:
+An owner-authored top-level comment on the target PR can request execution without opening the Actions UI. Only Trigger subscribes to PR comments. It validates the owner and the full registered execution list, then submits exactly one workflow_dispatch request to Single Run or Serial Run. The execution workflows no longer subscribe to comments. Trigger reports submission, not execution success; the target run has the source comment ID in its run name. The target workflow independently validates the full chain and expected script count:
 
 ```text
 /execute {"execution":"pr_merge.py - branch_delete.py","expected_head_sha":"<full reviewed PR head SHA>"}
 ```
 
-Replace the placeholder with the real SHA. The PR number is derived from the comment's PR. Only newly created comments from the repository owner are accepted; edits, other authors and comment-run replays are rejected. The workflow checks out its trusted default-branch commit, not the PR's code.
+Replace the placeholder with the real SHA. The PR number is derived from the comment's PR. Only newly created comments from the repository owner are accepted; edits, other authors and comment-run replays are rejected. Trigger and the execution workflows check out their trusted default-branch event commits, not the PR's code. Trigger has contents: read and actions: write; only the execution jobs have contents: write. A fresh request is required instead of rerunning a previous run.
 
 For scheduled submission, an explicitly owner-authored comment can use the same JSON with the prefix `/queue `. The ChatGPT scheduled task may submit an equivalent `/execute ` comment with a `queue_comment_id` identifying the approval. A queue entry is not itself an execution trigger. The scheduler must verify the author's ID and current PR state/SHA and avoid resubmitting a queue ID already dispatched. Never infer approval from ordinary PR text. Do not automatically retry failed commands; submit a fresh explicit request.
