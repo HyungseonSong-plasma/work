@@ -5,7 +5,7 @@ import json
 import re
 
 from config import require_deletion, load_registry
-from github.framework.model import validate_sha, require_default_ref
+from github.framework.model import validate_sha, review_repository
 
 
 def actions_request(request):
@@ -139,9 +139,7 @@ def delete_actions_batch(api, remove, repository, run_ref, targets, current_run_
         raise ValueError("Invalid current run ID.")
     if any(target["run_id"] == current_run_id for target in targets):
         raise ValueError("Cannot delete the current workflow run.")
-    root = f"repos/{repository}"
-    repo = api("GET", root)
-    require_default_ref(run_ref, repo["default_branch"])
+    root, repo = review_repository(api, repository, run_ref)
     reviewed = [_review_run(api, root, repo, repository, target, policy)
                 for target in targets]
     results = []

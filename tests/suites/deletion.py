@@ -507,7 +507,7 @@ class DeletionContract(TestSuite):
                 return "Done"
 
             with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
-                    patch.object(deletion.subprocess, "run",
+                    patch("github.framework.transport.subprocess.run",
                                  side_effect=[None, SimpleNamespace(returncode=status)]) as run:
                 args = (ctx.api, REPO, REF, "7", SHA, "remote")
                 if status:

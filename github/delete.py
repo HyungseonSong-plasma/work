@@ -1,31 +1,26 @@
 # FileRank: C
 """Target-specific GitHub deletions with explicit registration and validation."""
 
-import os
-import subprocess
-import tempfile
 from urllib.parse import quote
 
 from config import require_deletion
 from github.actions import delete_actions_batch, delete_actions_run
-from github.framework.model import require_default_ref
+from github.framework.model import review_repository, matches_pr_head
+from github.framework.transport import git_session
 
 
 
 def delete_branch(api, git, repository, run_ref, number, sha, remote):
     """Derive the deletion target from GitHub, not from user-supplied refs."""
     require_deletion("branch")
-    root = f"repos/{repository}"
-    default = api("GET", root)["default_branch"]
-    require_default_ref(run_ref, default)
+    root, repo = review_repository(api, repository, run_ref)
+    default = repo["default_branch"]
 
     pr = api("GET", f"{root}/pulls/{number}")
     if not (
         pr["state"] == "closed"
         and pr["merged"] is True
-        and pr["base"]["ref"] == default
-        and pr["base"]["repo"]["full_name"] == repository
-        and pr["head"]["sha"] == sha
+        and matches_pr_head(pr, repository, default, sha)
     ):
         raise ValueError("Expected a merged PR into the default branch with matching head SHA.")
     head = pr["head"]
@@ -71,21 +66,8 @@ def delete_branch(api, git, repository, run_ref, number, sha, remote):
 
 
 def delete_branch_with_git(api, repository, run_ref, number, sha, remote):
-    """Use an isolated Git repository and the scoped credential helper."""
-    with tempfile.TemporaryDirectory() as directory:
-        subprocess.run(["git", "init", "-q", directory], check=True)
-        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
-
-        def git(*args, allowed=(0,)):
-            result = subprocess.run(
-                ["git", "-C", directory, "-c", "credential.helper=",
-                 "-c", "credential.helper=!gh auth git-credential", *args],
-                env=env, capture_output=True, text=True, timeout=60,
-            )
-            if result.returncode not in allowed:
-                raise ValueError(f"Git {args[0]} failed (exit {result.returncode}).")
-            return result
-
+    """Run branch deletion inside the shared isolated Git session."""
+    with git_session() as git:
         return delete_branch(api, git, repository, run_ref, number, sha, remote)
 
 

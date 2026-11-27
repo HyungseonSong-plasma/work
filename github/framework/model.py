@@ -39,3 +39,17 @@ def parse_pr_parameters(raw):
         raise ValueError("Provide pr_number and expected_head_sha only.")
     return (validate_pr_number(parameters["pr_number"]),
             validate_sha(parameters["expected_head_sha"]))
+
+def review_repository(api, repository, ref):
+    """Read repository metadata and require its current default ref."""
+    root = f"repos/{repository}"
+    repo = api("GET", root)
+    require_default_ref(ref, repo["default_branch"])
+    return root, repo
+
+
+def matches_pr_head(pr, repository, default, sha):
+    """Compare the reviewed base repository/ref and exact head SHA."""
+    return (pr["base"]["ref"] == default
+            and pr["base"]["repo"]["full_name"] == repository
+            and pr["head"]["sha"] == sha)
