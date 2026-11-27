@@ -1,13 +1,7 @@
 # FileRank: C
 """Merge a single, explicitly selected GitHub pull request."""
 
-import json
-import os
 import re
-import sys
-from pathlib import Path
-from urllib.error import HTTPError, URLError
-from github.model import github_api
 
 
 def merge_pr(api, repository, ref, pr_number, expected_head_sha):
@@ -46,39 +40,3 @@ def merge_pr(api, repository, ref, pr_number, expected_head_sha):
     if result.get("merged") is not True or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("GitHub did not confirm a successful merge.")
     return sha
-
-
-def main():
-    try:
-        parameters = json.loads(os.environ["EXECUTION_INPUTS"])
-        if not isinstance(parameters, dict) or set(parameters) != {"pr_number", "expected_head_sha"}:
-            raise ValueError("Provide pr_number and expected_head_sha only.")
-        number = parameters["pr_number"]
-        if type(number) is int:
-            number = str(number)
-        if not isinstance(number, str) or not isinstance(parameters["expected_head_sha"], str):
-            raise ValueError("Invalid parameter types.")
-        sha = merge_pr(
-            github_api,
-            os.environ["GITHUB_REPOSITORY"],
-            os.environ["GITHUB_REF"],
-            number,
-            parameters["expected_head_sha"],
-        )
-    except HTTPError as error:
-        print(f"GitHub API request failed: HTTP {error.code}", file=sys.stderr)
-        return 1
-    except (URLError, ValueError, KeyError, TimeoutError, TypeError) as error:
-        print(f"Merge could not be confirmed: {error}", file=sys.stderr)
-        return 1
-
-    print(f"Merged PR #{number}: {sha}")
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with Path(summary).open("a", encoding="utf-8") as stream:
-            stream.write(f"Merged PR #{number}\n\nMerge commit: `{sha}`\n")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
