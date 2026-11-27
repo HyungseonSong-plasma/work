@@ -10,6 +10,9 @@ from config import load_names
 
 # Configuration is an allowlist, not an implementation or permission grant.
 EXECUTIONS = frozenset(load_names("executions"))
+if any(Path(name).name != name or not name.endswith(".py") or
+       not name[:-3].replace("_", "").isalnum() for name in EXECUTIONS):
+    raise ValueError("Expected registered script filenames.")
 
 
 def resolve_execution(expression, parameters):
