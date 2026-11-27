@@ -345,6 +345,52 @@ class RegistryContract(TestSuite):
             with self.subTest(body=body):
                 validate_method("def test_example(self):\n    " + body)
 
+    def test_runner_grammar_preserves_form_and_error_precedence(self):
+        from libs.testing import RUNNERS
+
+        self.assertEqual(RUNNERS, frozenset(("run_cases", "run_contract", "run_scenario")))
+        compact = "def check(ctx):\n    pass\n"
+        split = "def act(ctx):\n    pass\ndef check(ctx, result):\n    pass\n"
+        scenario = "def first(ctx):\n    pass\ndef check(ctx):\n    pass\n"
+        arrange = "def arrange(ctx):\n    pass\n"
+        cases = "cases = (('one', 1),)\ndef check(ctx, value):\n    pass\n"
+        valid = (
+            cases + "self.run_cases(cases, check)",
+            compact + "self.run_contract(check=check)",
+            arrange + compact + "self.run_contract(check=check, arrange=arrange)",
+            split + "self.run_contract(act, check, raises=ValueError)",
+            arrange + split + "self.run_contract(act, check, arrange=arrange, raises=ValueError)",
+            scenario + "steps = (('first', first),)\nself.run_scenario(steps, check)",
+            arrange + scenario + "steps = (('first', first),)\nself.run_scenario(steps, check, arrange=arrange)",
+        )
+
+        def source(body):
+            return "def test_example(self):\n" + "\n".join("    " + line for line in body.splitlines())
+
+        for body in valid:
+            with self.subTest(body=body):
+                self.assertIsNone(validate_method(source(body)))
+        invalid = (
+            (compact + "self.run_contract(check=check, check=check)", "Invalid runner keywords."),
+            (compact + "self.run_contract(check=check, **other)", "Invalid runner keywords."),
+            (compact + "self.run_contract(check=check, raises=bad(), arrange=wrong)", "Expected exceptions require split contract form."),
+            (split + "self.run_contract(act, check, raises=bad(), arrange=wrong)", "Invalid expected exception declaration."),
+            (compact + "self.run_contract(check=check, arrange=wrong, other=1)", "Use the named arrange callback."),
+            (cases + "self.run_cases(cases, check, arrange=wrong)", "Use self.run_cases(cases, check)."),
+            (compact + "self.run_cases(cases, check)", "Use self.run_cases(cases, check)."),
+            (scenario + "steps = ()\nself.run_scenario(steps, check, arrange=wrong)", "Scenario requires an explicit named step table."),
+            (scenario + "steps = (('first', 1),)\nself.run_scenario(steps, check, arrange=wrong)", "Invalid step declaration."),
+            (scenario + "steps = (('first', first),)\nself.run_scenario(steps, check, raises=ValueError)", "Missing, unused or unexpected runner callbacks."),
+            (arrange + compact + "self.run_contract(check=check)", "Missing, unused or unexpected runner callbacks."),
+            (compact + "self.run_contract(check=wrong, raises=bad())", "Use run_contract(act, check) or run_contract(check=check)."),
+            ("bad = print('not executed')\n" + compact + "self.run_contract(check=check, raises=bad())", "Only data and callback declarations may precede the runner."),
+        )
+        for body, expected in invalid:
+            with self.subTest(body=body):
+                with self.assertRaises(ValueError) as error:
+                    validate_method(source(body))
+                self.assertEqual(str(error.exception), expected)
+
     def test_structure_validation_rejects_direct_or_multiple_execution(self):
         valid = "def check(ctx):\n        pass\n    self.run_contract(check=check)"
         bodies = (
