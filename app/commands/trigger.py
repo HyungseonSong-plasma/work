@@ -6,7 +6,7 @@ from app.commands.model import Command, read_event, report, repository_context, 
 from github.trigger import dispatch_request
 
 
-def trigger():
+def execute():
     require_event("issue_comment", fresh=True)
     workflow, request_id = dispatch_request(read_event(), *repository_context())
     report(f"Submitted {workflow}: {request_id}",
@@ -21,4 +21,4 @@ class TriggerCommand(Command):
 
     @staticmethod
     def execute(args):
-        return trigger()
+        return execute()

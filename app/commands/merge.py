@@ -7,6 +7,14 @@ from github.model import github_api
 from scripts import pr_merge
 
 
+def execute():
+    number, sha, repository, ref = pr_context("pr_merge.py")
+    result = pr_merge.merge_pr(github_api, repository, ref, number, sha)
+    report(f"Merged PR #{number}: {result}",
+           f"Merged PR #{number}\n\nMerge commit: `{result}`")
+    return 0
+
+
 @register("merge")
 class MergeCommand(Command):
     help = "Merge one reviewed pull request"
@@ -14,8 +22,4 @@ class MergeCommand(Command):
 
     @staticmethod
     def execute(args):
-        number, sha, repository, ref = pr_context("pr_merge.py")
-        result = pr_merge.merge_pr(github_api, repository, ref, number, sha)
-        report(f"Merged PR #{number}: {result}",
-               f"Merged PR #{number}\n\nMerge commit: `{result}`")
-        return 0
+        return execute()

@@ -103,3 +103,19 @@ class CliContract(TestSuite):
             self.assert_rejected(workflow_commands)
         with patch.object(COMMANDS["test"], "workflow_execution", ("test.py",)):
             self.assert_rejected(workflow_commands)
+
+
+    def test_no_argument_commands_delegate_to_module_execute(self):
+        from app.commands import trigger, merge, test
+        for name, module in (("trigger", trigger), ("merge", merge), ("test", test)):
+            with self.subTest(command=name):
+                with patch.object(module, "execute", return_value=0) as run:
+                    self.assertEqual(cli.main([name]), 0)
+                    run.assert_called_once_with()
+
+    def test_delete_command_delegates_to_module_execute(self):
+        from app.commands import delete
+        with patch.object(delete, "execute", return_value=0) as run:
+            self.assertEqual(cli.main(["delete", "branch"]), 0)
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0].target, "branch")
