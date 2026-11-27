@@ -124,6 +124,106 @@ class DeletionContract(TestSuite):
 
         self.run_cases(cases, check)
 
+    def test_retention_requires_consistent_complete_first_page(self):
+        cases = (
+            ("complete_missing_newest", 1, 50, (40,), 1, False, None, False),
+            ("complete_missing_older", 1, 10, (40,), 1, False, None, False),
+            ("short_page", 1, 10, (40,), 101, False, None, False),
+            ("full_page_newest_missing", 1, 50, (40,) * 100, 101, False, None, False),
+            ("full_page_inside_keep2", 2, 35, (40,) + (30,) * 99, 101, False, None, False),
+            ("full_page_older_missing", 1, 10, (40,) * 100, 101, False, None, True),
+            ("full_page_tie_older_id", 1, 40, (40,) * 100, 101, False, None, True),
+            ("full_page_missing_inside_page", 1, 35, (40,) + (30,) * 99, 101, False, None, False),
+            ("complete_100_missing", 1, 10, (40,) * 100, 100, False, None, False),
+            ("present_older", 1, 10, (40,), 2, True, None, True),
+            ("present_retained_keep2", 2, 10, (40,), 2, True, None, False),
+            ("present_wrong_order", 1, 50, (40,), 2, True, "order", False),
+            ("present_wrong_attempt", 1, 10, (40,), 2, True, "attempt", False),
+            ("present_wrong_sha", 1, 10, (40,), 2, True, "sha", False),
+            ("present_missing_attempt", 1, 10, (40,), 2, True, "missing_attempt", False),
+            ("target_bad_timestamp", 1, 10, (40,), 2, True, "target_time", False),
+            ("listing_bad_timestamp", 1, 10, (40,), 2, True, "listing_time", False),
+            ("listing_missing_timestamp", 1, 10, (40,), 2, True, "missing_time", False),
+            ("invalid_total_bool", 1, 10, (40,), True, False, None, False),
+            ("invalid_total_negative", 1, 10, (), -1, False, None, False),
+        )
+
+        def check(ctx, keep, minute, minutes, total, present, defect, allowed):
+            path = ".github/workflows/trigger.yml"
+            run = dict(ctx.run_data, path=path, workflow_id=7, conclusion="success",
+                       created_at=f"2026-01-01T00:{minute:02d}:00Z")
+            rows = [dict(run, id=100+i, created_at=f"2026-01-01T00:{v:02d}:00Z")
+                    for i, v in enumerate(minutes)]
+            if present:
+                row = dict(run)
+                if defect == "order":
+                    row["created_at"] = "2026-01-01T00:00:00Z"
+                elif defect == "attempt":
+                    row["run_attempt"] = 2
+                elif defect == "sha":
+                    row["head_sha"] = "b" * 40
+                elif defect == "missing_attempt":
+                    row.pop("run_attempt")
+                rows.append(row)
+            rows.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+            if defect == "target_time":
+                run["created_at"] = "2026-02-30T00:00:00Z"
+            elif defect == "listing_time":
+                rows[0]["created_at"] = "2026-01-01T24:00:00Z"
+            elif defect == "missing_time":
+                rows[0].pop("created_at")
+            listing = {"total_count": total, "workflow_runs": rows}
+            policy = {"max_batch": 30, "keep_successful": keep,
+                      "protected_workflows": [path], "pinned_run_ids": []}
+            ctx.api.side_effect = [ctx.repo, run, listing, deepcopy(run), listing]
+            with patch.object(actions, "actions_policy", return_value=policy):
+                if allowed:
+                    self.assertEqual(actions.delete_actions_run(**ctx.parameters),
+                                     "Deleted Actions run: 12")
+                    ctx.remove.assert_called_once_with(f"repos/{REPO}/actions/runs/12")
+                else:
+                    self.assert_rejected(actions.delete_actions_run, **ctx.parameters)
+                    ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_retention_inconsistent_fresh_review_stops_before_delete(self):
+        def check(ctx):
+            path = ".github/workflows/trigger.yml"
+            run = dict(ctx.run_data, path=path, workflow_id=7, conclusion="success",
+                       created_at="2026-01-01T00:20:00Z")
+            newer = dict(run, id=20, created_at="2026-01-01T00:40:00Z")
+            good = {"total_count": 2, "workflow_runs": [newer, run]}
+            bad = {"total_count": 1, "workflow_runs": [newer]}
+            report = Mock()
+            ctx.api.side_effect = [ctx.repo, run, good, deepcopy(run), bad]
+            with self.assertRaisesRegex(ValueError, "Successful target missing"):
+                actions.delete_actions_batch(targets=[ctx.target()], report=report,
+                                             **ctx.batch_parameters)
+            self.assertEqual(ctx.api.call_args_list, [
+                call("GET", f"repos/{REPO}"),
+                call("GET", f"repos/{REPO}/actions/runs/12"),
+                call("GET", f"repos/{REPO}/actions/workflows/7/runs?status=success&per_page=100"),
+                call("GET", f"repos/{REPO}/actions/runs/12"),
+                call("GET", f"repos/{REPO}/actions/workflows/7/runs?status=success&per_page=100")])
+            ctx.remove.assert_not_called()
+            report.assert_not_called()
+
+        self.run_contract(check=check)
+
+    def test_retention_failed_target_cannot_appear_as_success(self):
+        def check(ctx):
+            run = dict(ctx.run_data, path=".github/workflows/trigger.yml", workflow_id=7,
+                       conclusion="failure", created_at="2026-01-01T00:20:00Z")
+            newer = dict(run, id=20, conclusion="success", created_at="2026-01-01T00:40:00Z")
+            inconsistent = dict(run, conclusion="success")
+            ctx.api.side_effect = [ctx.repo, run,
+                                   {"total_count": 2, "workflow_runs": [newer, inconsistent]}]
+            self.assert_rejected(actions.delete_actions_run, **ctx.parameters)
+            ctx.remove.assert_not_called()
+
+        self.run_contract(check=check)
+
     def test_older_success_can_be_deleted(self):
         def check(ctx):
             run = dict(ctx.run_data, path=".github/workflows/trigger.yml", workflow_id=7,

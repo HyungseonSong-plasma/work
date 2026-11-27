@@ -3,6 +3,7 @@
 
 import json
 import re
+from datetime import datetime
 
 from config import require_deletion, load_registry
 from libs.github import (CLIENT, validate_sha, review_repository,
@@ -90,6 +91,19 @@ def _run_path(run):
     return path.split("@", 1)[0]
 
 
+def _retention_order(run):
+    """Validate GitHub's UTC creation timestamp before comparing ranks."""
+    created = run.get("created_at")
+    if not isinstance(created, str) or not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", created):
+        raise ValueError("Invalid successful-run creation timestamp.")
+    try:
+        datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as error:
+        raise ValueError("Invalid successful-run creation timestamp.") from error
+    return created, run["id"]
+
+
 def _check_retention(api, root, repository, repo_id, run, policy):
     if run["id"] in policy["pinned_run_ids"]:
         raise ValueError("Pinned Actions evidence.")
@@ -101,10 +115,11 @@ def _check_retention(api, root, repository, repo_id, run, policy):
         raise ValueError("Invalid workflow ID.")
     response = api("GET", f"{root}/actions/workflows/{workflow_id}/runs?status=success&per_page=100")
     runs, total = response["workflow_runs"], response["total_count"]
-    if (not isinstance(runs, list) or len(runs) > 100 or type(total) is not int
-            or total < len(runs) or len(runs) < min(total, policy["keep_successful"])):
+    if (not isinstance(runs, list) or type(total) is not int or total < 0
+            or len(runs) != min(total, 100)):
         raise ValueError("Incomplete successful-run listing.")
     previous, seen = None, set()
+    target_order = _retention_order(run) if run["conclusion"] == "success" else None
     for item in runs:
         if not (
             item["workflow_id"] == workflow_id
@@ -117,13 +132,21 @@ def _check_retention(api, root, repository, repo_id, run, policy):
             and item["id"] not in seen
         ):
             raise ValueError("Unexpected successful-run metadata.")
-        order = (item["created_at"], item["id"])
+        order = _retention_order(item)
         if previous is not None and order > previous:
             raise ValueError("Successful-run listing not newest first.")
         previous = order
         seen.add(item["id"])
-    if run["conclusion"] == "success" and not runs:
-        raise ValueError("Successful target missing from retention listing.")
+        if item["id"] == run["id"] and (
+                order != target_order
+                or item.get("head_sha") != run["head_sha"]
+                or type(item.get("run_attempt")) is not int
+                or item["run_attempt"] != run["run_attempt"]):
+            raise ValueError("Successful target metadata differs from retention listing.")
+    # Absence is only consistent beyond a complete first page of a longer listing.
+    if target_order is not None and run["id"] not in seen:
+        if total <= len(runs) or previous is None or target_order >= previous:
+            raise ValueError("Successful target missing from retention listing.")
     if run["id"] in {item["id"] for item in runs[:policy["keep_successful"]]}:
         raise ValueError("Latest successful workflow run is retained.")
 
