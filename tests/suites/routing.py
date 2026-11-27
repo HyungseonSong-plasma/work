@@ -1,6 +1,7 @@
 # FileRank: C
 """Offline routing contract tests."""
 
+from contextlib import nullcontext
 from unittest.mock import Mock, MagicMock, patch
 
 from github import trigger
@@ -231,23 +232,27 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_rest_json_transport_rejects_invalid_response_and_closes(self):
-        def check(ctx):
-            from libs.github import GitHubClient
-            from io import BytesIO
-            import json
-            import os
-            response = MagicMock()
-            response.__enter__.return_value = BytesIO(b"not JSON")
-            send = Mock(return_value=response)
-            with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
-                                         "GH_TOKEN": "offline-fixture"}, clear=True):
-                with self.assertRaises(json.JSONDecodeError):
-                    GitHubClient(send).request("GET", "repos/example/work")
-            send.assert_called_once()
-            response.__exit__.assert_called_once()
-            self.assertIs(response.__exit__.call_args.args[0], json.JSONDecodeError)
+        from libs.github import GitHubClient
+        from io import BytesIO
+        import json
+        import os
 
-        self.run_contract(check=check)
+        def arrange(ctx):
+            ctx.response = MagicMock()
+            ctx.response.__enter__.return_value = BytesIO(b"not JSON")
+            ctx.send = Mock(return_value=ctx.response)
+            return patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
+                                          "GH_TOKEN": "offline-fixture"}, clear=True)
+
+        def act(ctx):
+            return GitHubClient(ctx.send).request("GET", "repos/example/work")
+
+        def check(ctx, error):
+            ctx.send.assert_called_once()
+            ctx.response.__exit__.assert_called_once()
+            self.assertIs(ctx.response.__exit__.call_args.args[0], json.JSONDecodeError)
+
+        self.run_contract(act, check, arrange=arrange, raises=json.JSONDecodeError)
 
     def test_domain_imports_without_application_layer(self):
         def check(ctx):
@@ -259,20 +264,25 @@ class RoutingContract(TestSuite):
         self.run_contract(check=check)
 
     def test_injected_route_resolver_cannot_dispatch_on_rejection(self):
-        def check(ctx):
-            resolver = Mock(side_effect=ValueError("rejected execution"))
-            routes = Mock()
-            dispatch = Mock()
-            event = ctx.event("pr_merge.py")
-            with self.assertRaisesRegex(ValueError, "rejected execution"):
-                trigger.dispatch_request(event, REPO, REF, dispatch,
-                                         routes=routes, resolve=resolver)
-            resolver.assert_called_once_with("pr_merge.py",
-                '{"pr_number": 7, "expected_head_sha": "' + "a" * 40 + '"}')
-            routes.resolve.assert_not_called()
-            dispatch.assert_not_called()
+        def arrange(ctx):
+            ctx.resolver = Mock(side_effect=ValueError("rejected execution"))
+            ctx.routes = Mock()
+            ctx.dispatch = Mock()
+            ctx.request = ctx.event("pr_merge.py")
+            return nullcontext()
 
-        self.run_contract(check=check)
+        def act(ctx):
+            return trigger.dispatch_request(ctx.request, REPO, REF, ctx.dispatch,
+                                            routes=ctx.routes, resolve=ctx.resolver)
+
+        def check(ctx, error):
+            self.assertRegex(str(error), "rejected execution")
+            ctx.resolver.assert_called_once_with("pr_merge.py",
+                '{"pr_number": 7, "expected_head_sha": "' + "a" * 40 + '"}')
+            ctx.routes.resolve.assert_not_called()
+            ctx.dispatch.assert_not_called()
+
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_github_library_import_is_domain_independent(self):
         def check(ctx):
