@@ -83,17 +83,21 @@ class ExecutionContract(TestSuite):
         self.run_contract(act, check, arrange=arrange)
 
     def test_branch_disabled_blocks_before_api(self):
-        def check(ctx):
-            from github.delete import delete_branch
-            api, git = Mock(), Mock()
-            with patch("config.load_registry", return_value={
-                    "branch": {"enabled": False, "permission": "contents: write"}}):
-                with self.assertRaises(ValueError):
-                    delete_branch(api, git, REPO, REF, "7", SHA, "remote")
-            api.assert_not_called()
-            git.assert_not_called()
+        from github.delete import delete_branch
 
-        self.run_contract(check=check)
+        def arrange(ctx):
+            ctx.api, ctx.git = Mock(), Mock()
+            return patch("config.load_registry", return_value={
+                "branch": {"enabled": False, "permission": "contents: write"}})
+
+        def act(ctx):
+            delete_branch(ctx.api, ctx.git, REPO, REF, "7", SHA, "remote")
+
+        def check(ctx, error):
+            ctx.api.assert_not_called()
+            ctx.git.assert_not_called()
+
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_branch_adapter_uses_shared_context(self):
         def check(ctx):
@@ -361,26 +365,35 @@ class ExecutionContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_merge_operation_does_not_reuse_review_state(self):
-        def check(ctx):
-            from github.merge import MERGE, MergeOperation
-            from dataclasses import FrozenInstanceError
-            root = "repos/example/work"
+        from github.merge import MERGE, MergeOperation
+        from dataclasses import FrozenInstanceError
+
+        def reviewed_merge(ctx):
+            ctx.root = "repos/example/work"
             pr = ctx.pull_request()
             invalid = dict(pr, draft=True)
-            api = Mock(side_effect=[{"default_branch": "main"}, pr, {"merged": True, "sha": SHA},
-                                    {"default_branch": "main"}, invalid])
-            operation = MergeOperation(api, REPO, REF, 7, SHA)
-            self.assertEqual(MERGE.execute(operation), SHA)
-            self.assertEqual(operation.pr_number, 7)
-            with self.assertRaises(FrozenInstanceError):
-                operation.expected_head_sha = "b" * 40
-            self.assert_rejected(MERGE.execute, operation)
-            self.assertEqual(api.call_args_list, [
-                call("GET", root), call("GET", root + "/pulls/7"),
-                call("PUT", root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"}),
-                call("GET", root), call("GET", root + "/pulls/7")])
+            ctx.api = Mock(side_effect=[{"default_branch": "main"}, pr, {"merged": True, "sha": SHA},
+                                        {"default_branch": "main"}, invalid])
+            ctx.operation = MergeOperation(ctx.api, REPO, REF, 7, SHA)
+            self.assertEqual(MERGE.execute(ctx.operation), SHA)
+            self.assertEqual(ctx.operation.pr_number, 7)
 
-        self.run_contract(check=check)
+        def immutable_request(ctx):
+            with self.assertRaises(FrozenInstanceError):
+                ctx.operation.expected_head_sha = "b" * 40
+
+        def fresh_review(ctx):
+            self.assert_rejected(MERGE.execute, ctx.operation)
+
+        def check(ctx):
+            self.assertEqual(ctx.api.call_args_list, [
+                call("GET", ctx.root), call("GET", ctx.root + "/pulls/7"),
+                call("PUT", ctx.root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"}),
+                call("GET", ctx.root), call("GET", ctx.root + "/pulls/7")])
+
+        steps = (("reviewed_merge", reviewed_merge), ("immutable_request", immutable_request),
+                 ("fresh_review", fresh_review))
+        self.run_scenario(steps, check)
 
     def test_workflow_library_import_is_domain_independent(self):
         def check(ctx):

@@ -99,12 +99,13 @@ class CliContract(TestSuite):
         self.run_scenario(steps, check)
 
     def test_invalid_registration_rejected(self):
-        def check(ctx):
-            with self.assertRaises(TypeError):
-                register("invalid")(object)
+        def act(ctx):
+            register("invalid")(object)
+
+        def check(ctx, error):
             self.assertNotIn("invalid", COMMANDS)
 
-        self.run_contract(check=check)
+        self.run_contract(act, check, raises=TypeError)
 
     def test_test_command_exit_status(self):
         cases = (

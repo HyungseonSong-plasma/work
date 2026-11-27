@@ -1,6 +1,7 @@
 # FileRank: C
 """Offline deletion policy and target dispatch tests."""
 
+from contextlib import nullcontext
 from copy import deepcopy
 import json
 from unittest.mock import Mock, call, patch
@@ -136,25 +137,34 @@ class DeletionContract(TestSuite):
         self.run_contract(check=check)
 
     def test_pinned_run_cannot_be_deleted(self):
-        def check(ctx):
-            pinned = actions.actions_policy()["pinned_run_ids"][0]
-            ctx.run_data["id"] = pinned
-            self.assert_rejected(deletion.delete, "actions", **dict(ctx.parameters, run_id=pinned))
+        def arrange(ctx):
+            ctx.pinned = actions.actions_policy()["pinned_run_ids"][0]
+            ctx.run_data["id"] = ctx.pinned
+            return nullcontext()
+
+        def act(ctx):
+            return deletion.delete("actions", **dict(ctx.parameters, run_id=ctx.pinned))
+
+        def check(ctx, error):
             ctx.remove.assert_not_called()
 
-        self.run_contract(check=check)
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_batch_preflight_rejects_before_any_delete(self):
-        def check(ctx):
-            targets = [ctx.target(),
-                       ctx.target(14)]
+        def arrange(ctx):
+            ctx.targets = [ctx.target(), ctx.target(14)]
             ctx.api.side_effect = [ctx.repo, deepcopy(ctx.run_data),
-                                    dict(ctx.run_data, id=14, status="in_progress")]
-            params = ctx.batch_parameters
-            self.assert_rejected(deletion.delete, "actions_batch", targets=targets, **params)
+                                   dict(ctx.run_data, id=14, status="in_progress")]
+            ctx.params = ctx.batch_parameters
+            return nullcontext()
+
+        def act(ctx):
+            return deletion.delete("actions_batch", targets=ctx.targets, **ctx.params)
+
+        def check(ctx, error):
             ctx.remove.assert_not_called()
 
-        self.run_contract(check=check)
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_batch_deletes_exact_targets(self):
         def check(ctx):
@@ -326,17 +336,22 @@ class DeletionContract(TestSuite):
         self.run_scenario(steps, check)
 
     def test_actions_context_rejects_mixed_inputs_before_reading_event(self):
-        def check(ctx):
+        def arrange(ctx):
             args = SimpleNamespace(runs="[]", run_id=12, expected_head_sha=SHA,
                                    expected_run_attempt=1, request_id="", source_pr="")
-            action_ctx = ActionsContext(args, env={"GITHUB_EVENT_NAME": "workflow_dispatch",
-                                                  "GITHUB_RUN_ATTEMPT": "1"}, api=ctx.api)
-            with patch.object(action_ctx, "read_event") as read:
-                self.assert_rejected(action_ctx.validate)
-                read.assert_not_called()
+            ctx.action_ctx = ActionsContext(args, env={"GITHUB_EVENT_NAME": "workflow_dispatch",
+                                                      "GITHUB_RUN_ATTEMPT": "1"}, api=ctx.api)
+            ctx.read = Mock()
+            return patch.object(ctx.action_ctx, "read_event", ctx.read)
+
+        def act(ctx):
+            return ctx.action_ctx.validate()
+
+        def check(ctx, error):
+            ctx.read.assert_not_called()
             ctx.api.assert_not_called()
 
-        self.run_contract(check=check)
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_batch_approval_cannot_be_replaced_with_single(self):
         def approve(ctx):
