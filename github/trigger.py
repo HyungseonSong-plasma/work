@@ -2,15 +2,15 @@
 """Route an authorized PR comment to one execution workflow; never execute it."""
 
 import json
-import re
 
 from config import load_registry
 from github.delete import validate_actions_targets
-from github.model import WorkflowRegistry, dispatch_workflow
-from scripts.execute import EXECUTIONS, resolve_execution
+from github.model import (WorkflowRegistry, dispatch_workflow, validate_sha,
+                          validate_pr_number, require_default_ref, parse_execute_comment)
+from app.registry import execution_ids, resolve_execution
 
 
-registry = WorkflowRegistry.from_entries(load_registry("workflows"), EXECUTIONS)
+registry = WorkflowRegistry.from_entries(load_registry("workflows"), execution_ids())
 
 
 def owner_comment(event):
@@ -26,14 +26,11 @@ def owner_comment(event):
         and comment["author_association"] == "OWNER"
     ):
         raise ValueError("Unauthorized execution comment.")
-    prefix = "/execute "
-    if not comment["body"].startswith(prefix):
-        raise ValueError("Not an execution command.")
-    return json.loads(comment["body"][len(prefix):])
+    return parse_execute_comment(comment["body"])
 
 
-def comment_request(event):
-    request = owner_comment(event)
+def comment_request(event, request=None):
+    request = owner_comment(event) if request is None else request
     issue = event["issue"]
     if not isinstance(request, dict) or set(request) not in (
         {"execution", "expected_head_sha"},
@@ -42,17 +39,16 @@ def comment_request(event):
         raise ValueError("Invalid execution command fields.")
     if not isinstance(request["execution"], str):
         raise ValueError("Expected an execution string.")
-    sha = request["expected_head_sha"]
-    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-        raise ValueError("Expected a full lowercase Git commit SHA.")
+    sha = validate_sha(request["expected_head_sha"])
     if "queue_comment_id" in request and (
         type(request["queue_comment_id"]) is not int
         or request["queue_comment_id"] <= 0
     ):
         raise ValueError("Invalid queue comment ID.")
     number = issue["number"]
-    if type(number) is not int or number <= 0:
+    if type(number) is not int:
         raise ValueError("Invalid pull request number.")
+    validate_pr_number(number)
     return request["execution"], json.dumps({
         "pr_number": number,
         "expected_head_sha": sha,
@@ -81,8 +77,9 @@ def route_actions(event, default, request_id, request):
 
     require_deletion("actions")
     number = event["issue"]["number"]
-    if type(number) is not int or number <= 0:
+    if type(number) is not int:
         raise ValueError("Invalid source PR number.")
+    validate_pr_number(number)
     if event["comment"]["created_at"] != event["comment"]["updated_at"]:
         raise ValueError("Edited approval is not accepted.")
     return "actions_delete.yml", {
@@ -96,8 +93,7 @@ def route(event, repository, ref):
     if event["repository"]["full_name"] != repository:
         raise ValueError("Request repository mismatch.")
     default = event["repository"]["default_branch"]
-    if ref != f"refs/heads/{default}":
-        raise ValueError("Trigger must run on the default branch.")
+    require_default_ref(ref, default)
     request = owner_comment(event)
     comment_id = event["comment"]["id"]
     if type(comment_id) is not int or comment_id <= 0:
@@ -105,13 +101,13 @@ def route(event, repository, ref):
     request_id = f"comment-{comment_id}"
     if isinstance(request, dict) and request.get("execution") == "delete actions":
         return route_actions(event, default, request_id, request)
-    execution, parameters = comment_request(event)
-    scripts = resolve_execution(execution, parameters)
-    workflow = registry.resolve(script.name for script in scripts)
+    execution, parameters = comment_request(event, request)
+    executions = resolve_execution(execution, parameters)
+    workflow = registry.resolve(executions)
     return workflow, {
         "ref": default,
         "inputs": {
-            "execution": " - ".join(script.name for script in scripts),
+            "execution": " - ".join(executions),
             "parameters": parameters,
             "request_id": f"comment-{comment_id}",
         },

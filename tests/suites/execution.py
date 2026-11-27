@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from app.commands.model import Context, PRContext
-from scripts import execute
+from app.registry import resolve_execution
 from tests.suites.model import TestSuite, PARAMS, REPO, REF, ROOT, SHA
 from tests.registry import register
 
@@ -26,23 +26,23 @@ class ExecutionContract(TestSuite):
                 run.assert_not_called()
 
     def test_single_stage_child_uses_app(self):
-        scripts = execute.resolve_execution("pr_merge.py", PARAMS)
+        scripts = resolve_execution("pr_merge.py", PARAMS)
         run = Mock(return_value=SimpleNamespace(returncode=0))
-        self.assertEqual(execute.run_execution(scripts, run=run), 0)
+        self.assertEqual(execute_command.run_execution(scripts, run=run), 0)
         run.assert_called_once_with(
             [sys.executable, "-m", "app", "merge"],
             cwd=ROOT, check=False)
 
     def test_fail_fast(self):
-        scripts = execute.resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
+        scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
         run = Mock(return_value=SimpleNamespace(returncode=5))
-        self.assertEqual(execute.run_execution(scripts, run=run), 5)
+        self.assertEqual(execute_command.run_execution(scripts, run=run), 5)
         self.assertEqual(run.call_count, 1)
 
     def test_serial_stage_selects_only_delete(self):
-        scripts = execute.resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
+        scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
         run = Mock(return_value=SimpleNamespace(returncode=0))
-        self.assertEqual(execute.run_stage(scripts, 2, run=run), 0)
+        self.assertEqual(execute_command.run_stage(scripts, 2, run=run), 0)
         self.assertEqual(run.call_args.args[0][-2:], ["delete", "branch"])
         self.assertEqual(run.call_count, 1)
 
@@ -56,7 +56,7 @@ class ExecutionContract(TestSuite):
                                      "GITHUB_RUN_ATTEMPT": "1",
                                      "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF},
                         clear=True):
-            with patch.object(merge_command.pr_merge, "merge_pr", return_value=SHA) as merge:
+            with patch.object(merge_command.merge, "merge_pr", return_value=SHA) as merge:
                 self.assertEqual(merge_command.MergeCommand.execute(None), 0)
                 merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
 
@@ -110,3 +110,20 @@ class ExecutionContract(TestSuite):
         }).validate()
         self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
                          ("7", SHA, REPO, REF))
+
+
+    def test_execution_identifiers_need_no_physical_scripts(self):
+        self.assertFalse((ROOT / "scripts").exists())
+        self.assertEqual(resolve_execution("pr_merge.py - branch_delete.py", PARAMS),
+                         ("pr_merge.py", "branch_delete.py"))
+
+    def test_registry_rejects_unknown_duplicate_reverse_or_path(self):
+        for expression in ("test.py", "pr_merge.py - pr_merge.py",
+                           "branch_delete.py - pr_merge.py", "../pr_merge.py", ""):
+            with self.subTest(expression=expression):
+                self.assert_rejected(resolve_execution, expression, PARAMS)
+
+    def test_resolution_rejects_missing_command_binding(self):
+        from app.registry import COMMANDS
+        with patch.object(COMMANDS["merge"], "workflow_execution", ()):
+            self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)

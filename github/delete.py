@@ -8,6 +8,7 @@ import tempfile
 from urllib.parse import quote
 
 from config import require_deletion, load_registry
+from github.model import validate_sha, require_default_ref
 
 
 
@@ -16,8 +17,7 @@ def delete_branch(api, git, repository, run_ref, number, sha, remote):
     require_deletion("branch")
     root = f"repos/{repository}"
     default = api("GET", root)["default_branch"]
-    if run_ref != f"refs/heads/{default}":
-        raise ValueError("Run only on the current default branch.")
+    require_default_ref(run_ref, default)
 
     pr = api("GET", f"{root}/pulls/{number}")
     if not (
@@ -125,9 +125,7 @@ def validate_actions_targets(targets, policy=None):
         if any(type(target[key]) is not int or target[key] <= 0
                for key in ("run_id", "expected_run_attempt")):
             raise ValueError("Expected positive integer run ID and attempt.")
-        sha = target["expected_head_sha"]
-        if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-            raise ValueError("Expected a full lowercase Git commit SHA.")
+        validate_sha(target["expected_head_sha"])
         if target["run_id"] in ids:
             raise ValueError("Duplicate Actions run ID.")
         ids.add(target["run_id"])
@@ -207,8 +205,7 @@ def delete_actions_batch(api, remove, repository, run_ref, targets, current_run_
         raise ValueError("Cannot delete the current workflow run.")
     root = f"repos/{repository}"
     repo = api("GET", root)
-    if run_ref != f"refs/heads/{repo['default_branch']}":
-        raise ValueError("Run only on the current default branch.")
+    require_default_ref(run_ref, repo["default_branch"])
     reviewed = [_review_run(api, root, repo, repository, target, policy)
                 for target in targets]
     results = []
@@ -241,7 +238,6 @@ DELETIONS = {
 
 def delete(target, **parameters):
     """Dispatch to one explicit deletion implementation, never discover code."""
-    require_deletion("actions" if target == "actions_batch" else target)
     if target not in DELETIONS:
         raise ValueError("Unregistered deletion target.")
     return DELETIONS[target](**parameters)

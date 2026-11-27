@@ -36,7 +36,7 @@ Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submissio
 
 ### GitHub integration
 
-The repository-root `github/model.py` provides shared GitHub REST API transport, workflow dispatch, and a generic ordered `WorkflowRegistry`. `github/trigger.py` loads the supported workflow routes from `config/workflows.toml`, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and execution functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
+The repository-root `github/model.py` provides shared GitHub REST API transport, workflow dispatch, and a generic ordered `WorkflowRegistry`. `github/trigger.py` loads the supported workflow routes from `config/workflows.toml`, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `github/` contains GitHub operations; `app/commands/execute.py` runs isolated command subprocesses. Legacy `.py` execution identifiers are protocol strings only; no scripts directory or marker files are required. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
 
 ### Unified CLI
 
@@ -49,7 +49,7 @@ python3 -m app execute --serial-stage 2
 python3 -m app test
 ```
 
-These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered commands as isolated `python3 -m app merge` or `python3 -m app delete branch` subprocesses, with a fixed allowlist and fail-fast exit handling. `app/commands/model.py` provides the common command binding, event validation, PR context and result reporting; `app/registry.py` projects its single registry onto the exact execution allowlist. The former `task.py` and `TASKS` registry are removed. For workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
+These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered commands as isolated `python3 -m app merge` or `python3 -m app delete branch` subprocesses, with a fixed allowlist and fail-fast exit handling. `app/commands/model.py` provides the common command binding, event validation, PR context and result reporting; `app/registry.py` projects its single registry onto the exact execution allowlist and resolves execution identifier chains without filesystem discovery. The former `task.py` and `TASKS` registry are removed. For workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
 
 ### Adding CLI commands
 
@@ -61,7 +61,7 @@ For an end-to-end CLI regression check, use a reviewed documentation-only PR and
 
 ### Adding workflow routes
 
-Register exact ordered script arrays and workflow filenames in `config/workflows.toml`. The loader checks each script against `config/executions.toml`. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new scripts: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
+Register exact ordered execution identifier arrays and workflow filenames in `config/workflows.toml`. The loader checks each execution identifier against `config/executions.toml`. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new execution identifiers: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
 
 When verifying a workflow route change, confirm the Trigger and worker runs both use the post-change default-branch commit. A successful merge of the change itself exercises the previous implementation and is not sufficient evidence for the new route registry.
 
@@ -81,11 +81,11 @@ The command model supplies default argument configuration, abstract execute cont
 
 ### GitHub deletion framework
 
-`github/delete.py` exposes `delete(target, **parameters)` backed by explicitly registered branch and Actions handlers. The old `scripts/branch_delete.py` is an inert compatibility marker for existing approved PR execution chains; all deletion logic is in `github/delete.py`. Shared PR parameter parsing and HTTP 204 deletion transport live in `github/model.py`.
+`github/delete.py` exposes `delete(target, **parameters)` backed by explicitly registered branch and Actions handlers. The legacy `branch_delete.py` identifier maps directly to the registered `delete branch` command; all deletion logic is in `github/delete.py`. Shared PR parameter parsing and HTTP 204 deletion transport live in `github/model.py`.
 
 Actions Run deletion is available through an owner-authored PR comment or manual dispatch of [Delete Actions Run](../../actions/workflows/actions_delete.yml), with the exact reviewed run ID, full head SHA and run attempt. The workflow runs on the default branch, first attempt only. Manual dispatch requires the owner; a Trigger dispatch must cite the exact unchanged owner PR comment, which the worker re-fetches and validates against the inputs. The workflow has `actions: write` and `contents: read`, not `contents: write`; existing merge/delete workers retain their original permissions. Only completed runs in this repository may be deleted. The current run, pinned evidence IDs, and the newest successful run(s) for each listed audit workflow are retained according to config/actions_policy.toml. Explicit batches are limited to 30 reviewed targets. No automatic age-based cleanup is implemented. Each batch preflights all targets, then revalidates and deletes sequentially; later errors stop the batch but cannot restore earlier deletions. Metadata is rechecked immediately before DELETE, but the GitHub endpoint does not offer an atomic attempt guard; do not rerun a target concurrently. The controller remains submission-only for the original PR execution chains; it cannot submit Actions deletion. The separate owner PR comment route is `/execute {"execution":"delete actions","run_id":123,"expected_head_sha":"<full run head SHA>","expected_run_attempt":1}`. No queue_comment_id is accepted. The isolated deletion workflow also receives issues: read and pull-requests: read to verify the source comment and PR; existing workers are unchanged.
 
-After changing the shared deletion framework, verify the legacy branch execution marker still dispatches to the registered GitHub branch handler in a post-change serial run.
+After changing the shared deletion framework, verify the legacy branch execution identifier still dispatches to the registered GitHub branch handler in a post-change serial run.
 
 Batch comment: `/execute {"execution":"delete actions","runs":[{"run_id":123,"expected_head_sha":"<full SHA>","expected_run_attempt":1}]}`. The original single-run format remains supported. Never use implicit selectors. Only one deletion workflow may execute at a time; GitHub may replace pending concurrency-group runs, so submit one batch at a time.
 
@@ -96,3 +96,5 @@ Post-refactor live verification uses the unchanged serial PR comment contract to
 After standardizing the thin command adapters, verify the unchanged serial comment route and the dedicated Actions deletion context through the post-change default branch.
 
 Verify the context model on the post-change default branch using the unchanged serial comment route and both single and batch Actions deletion requests.
+
+Shared SHA, PR number, default-ref and execution-comment parsing functions live in `github/model.py`. Trigger and workers independently invoke these validators; remote-state and mutation guards remain in the GitHub operation handlers. `github/merge.py` contains PR merge implementation. Deletion policy is enforced at each actual handler rather than twice in the dispatcher and handler.
