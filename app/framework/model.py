@@ -100,7 +100,7 @@ class PRContext(Context):
 
     def validate(self):
         from github.model import parse_pr_parameters
-        from app.registry import resolve_execution
+        from app.framework.registry import resolve_execution
 
         self.require_event("workflow_dispatch", fresh=True)
         resolve_execution(self.execution_id, self.parameters)

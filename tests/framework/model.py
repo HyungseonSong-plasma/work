@@ -97,7 +97,7 @@ class ActionsTestContext(WorkflowTestContext):
     def validate_context(self, event, repository, ref, actor_id, workflow_ref,
                          request_id="", source_pr="", inputs=None, api=None):
         # The production context is the system under test, never the source of fixtures.
-        from app.commands.model import ActionsContext
+        from app.framework.model import ActionsContext
 
         inputs = ({"run_id": "12", "expected_head_sha": SHA,
                    "expected_run_attempt": "1"} if inputs is None else inputs)

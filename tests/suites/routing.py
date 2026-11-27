@@ -5,8 +5,8 @@ from unittest.mock import Mock, patch
 
 from github import trigger
 from github.model import WorkflowRegistry
-from tests.suites.model import TestSuite, WorkflowTestContext, REPO, REF
-from tests.registry import register
+from tests.framework.model import TestSuite, WorkflowTestContext, REPO, REF
+from tests.framework.registry import register
 
 
 @register("routing")

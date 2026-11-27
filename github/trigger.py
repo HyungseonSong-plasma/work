@@ -7,7 +7,7 @@ from config import load_registry
 from github.delete import validate_actions_targets
 from github.model import (WorkflowRegistry, dispatch_workflow, validate_sha,
                           validate_pr_number, require_default_ref, parse_execute_comment)
-from app.registry import execution_ids, resolve_execution
+from app.framework.registry import execution_ids, resolve_execution
 
 
 registry = WorkflowRegistry.from_entries(load_registry("workflows"), execution_ids())

@@ -5,8 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.registry import register, resolve_execution, workflow_commands
-from app.commands.model import Command, Context
+from app.framework.registry import register, resolve_execution, workflow_commands
+from app.framework.model import Command, Context
 
 
 def run_execution(executions, run=subprocess.run):
