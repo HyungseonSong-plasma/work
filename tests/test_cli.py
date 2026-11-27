@@ -10,7 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from app import cli, commands
+from app import cli
+from app.commands import execute as execute_command, task as task_command
+from app.registry import COMMANDS, register
 from scripts import execute, trigger
 
 SHA = "a" * 40
@@ -40,12 +42,12 @@ class CLIContract(unittest.TestCase):
         self.assertIn("trigger", result.stdout)
 
     def test_cli_single(self):
-        with patch.object(commands, "execute", return_value=0) as call:
+        with patch.object(execute_command, "execute", return_value=0) as call:
             self.assertEqual(cli.main(["execute", "--single"]), 0)
             call.assert_called_once_with(True, None)
 
     def test_cli_serial(self):
-        with patch.object(commands, "execute", return_value=0) as call:
+        with patch.object(execute_command, "execute", return_value=0) as call:
             self.assertEqual(cli.main(["execute", "--serial-stage", "2"]), 0)
             call.assert_called_once_with(False, 2)
 
@@ -58,9 +60,9 @@ class CLIContract(unittest.TestCase):
         with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch",
                                      "EXECUTION": "pr_merge.py - branch_delete.py",
                                      "EXECUTION_INPUTS": PARAMS}, clear=True):
-            with patch.object(commands, "run_execution") as run:
+            with patch.object(execute_command, "run_execution") as run:
                 with self.assertRaises(ValueError):
-                    commands.execute(True, None)
+                    execute_command.execute(True, None)
                 run.assert_not_called()
 
     def test_single_stage_child_uses_app(self):
@@ -107,15 +109,47 @@ class CLIContract(unittest.TestCase):
     def test_task_parameter_validation(self):
         with patch.dict(os.environ, {"EXECUTION_INPUTS": "{}"}, clear=True):
             with self.assertRaises(ValueError):
-                commands.task("pr_merge.py")
+                task_command.task("pr_merge.py")
 
     def test_merge_adapter(self):
         with patch.dict(os.environ, {"EXECUTION_INPUTS": PARAMS,
                                      "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF},
                         clear=True):
-            with patch.object(commands.pr_merge, "merge_pr", return_value=SHA) as merge:
-                self.assertEqual(commands.task("pr_merge.py"), 0)
-                merge.assert_called_once_with(commands.github_api, REPO, REF, "7", SHA)
+            with patch.object(task_command.pr_merge, "merge_pr", return_value=SHA) as merge:
+                self.assertEqual(task_command.task("pr_merge.py"), 0)
+                merge.assert_called_once_with(task_command.github_api, REPO, REF, "7", SHA)
+
+    def test_registered_command_extends_cli_without_branch(self):
+        with patch.dict(COMMANDS):
+            @register("sample")
+            class SampleCommand:
+                help = "Test-only command"
+
+                @staticmethod
+                def configure(parser):
+                    parser.add_argument("--value", type=int, required=True)
+
+                @staticmethod
+                def execute(args):
+                    return args.value
+
+            self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
+
+    def test_duplicate_registration_rejected(self):
+        original = COMMANDS["trigger"]
+        with self.assertRaises(ValueError):
+            register("trigger")(original)
+        self.assertIs(COMMANDS["trigger"], original)
+
+    def test_invalid_registration_rejected(self):
+        with self.assertRaises(TypeError):
+            register("invalid")(object)
+        self.assertNotIn("invalid", COMMANDS)
+
+    def test_unknown_command_rejected(self):
+        with self.assertRaises(SystemExit) as error:
+            cli.main(["unregistered"])
+        self.assertEqual(error.exception.code, 2)
 
 
 if __name__ == "__main__":
