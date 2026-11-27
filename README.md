@@ -74,3 +74,5 @@ For TOML registry regression verification, confirm that the worker and Trigger u
 ### Test registry
 
 The offline test suite uses `config/tests.toml` as its ordered manifest. Each `tests/suites/` module registers a `unittest.TestCase` class with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared fixtures live in `tests/fixture.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
+
+Verify the TOML serial route with a documentation-only PR on the post-migration default branch; confirm both job conclusions and actual branch removal.
