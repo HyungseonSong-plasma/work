@@ -1,25 +1,22 @@
 # FileRank: C
 """Offline execution contract tests."""
 
-import os
 import sys
-import unittest
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from app.commands.model import Context, PRContext
 from app.registry import resolve_execution
-from tests.suites.model import TestSuite, PARAMS, REPO, REF, ROOT, SHA
+from tests.suites.model import TestSuite, WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
 from tests.registry import register
 
 
 @register("execution")
 class ExecutionContract(TestSuite):
+    context_type = WorkflowTestContext
+
     def test_reject_serial_in_single_mode(self):
-        with patch.dict(os.environ, {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1",
-                                     "EXECUTION": "pr_merge.py - branch_delete.py",
-                                     "EXECUTION_INPUTS": PARAMS}, clear=True):
+        with self.ctx.patched_environment(EXECUTION="pr_merge.py - branch_delete.py"):
             with patch.object(execute_command, "run_execution") as run:
                 with self.assertRaises(ValueError):
                     execute_command.execute(True, None)
@@ -27,7 +24,7 @@ class ExecutionContract(TestSuite):
 
     def test_single_stage_child_uses_app(self):
         scripts = resolve_execution("pr_merge.py", PARAMS)
-        run = Mock(return_value=SimpleNamespace(returncode=0))
+        run = self.ctx.process()
         self.assertEqual(execute_command.run_execution(scripts, run=run), 0)
         run.assert_called_once_with(
             [sys.executable, "-m", "app", "merge"],
@@ -35,27 +32,24 @@ class ExecutionContract(TestSuite):
 
     def test_fail_fast(self):
         scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
-        run = Mock(return_value=SimpleNamespace(returncode=5))
+        run = self.ctx.process(5)
         self.assertEqual(execute_command.run_execution(scripts, run=run), 5)
         self.assertEqual(run.call_count, 1)
 
     def test_serial_stage_selects_only_delete(self):
         scripts = resolve_execution("pr_merge.py - branch_delete.py", PARAMS)
-        run = Mock(return_value=SimpleNamespace(returncode=0))
+        run = self.ctx.process()
         self.assertEqual(execute_command.run_stage(scripts, 2, run=run), 0)
         self.assertEqual(run.call_args.args[0][-2:], ["delete", "branch"])
         self.assertEqual(run.call_count, 1)
 
     def test_pr_parameter_validation(self):
-        with patch.dict(os.environ, {"EXECUTION_INPUTS": "{}", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1"}, clear=True):
+        with self.ctx.patched_environment(EXECUTION_INPUTS="{}"):
             with self.assertRaises(ValueError):
                 PRContext("pr_merge.py").validate()
 
     def test_merge_adapter(self):
-        with patch.dict(os.environ, {"EXECUTION_INPUTS": PARAMS, "GITHUB_EVENT_NAME": "workflow_dispatch",
-                                     "GITHUB_RUN_ATTEMPT": "1",
-                                     "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF},
-                        clear=True):
+        with self.ctx.patched_environment():
             with patch.object(merge_command.merge, "merge_pr", return_value=SHA) as merge:
                 self.assertEqual(merge_command.MergeCommand.execute(None), 0)
                 merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
@@ -73,11 +67,7 @@ class ExecutionContract(TestSuite):
 
     def test_branch_adapter_uses_shared_context(self):
         from app import cli
-        with patch.dict(os.environ, {"EXECUTION_INPUTS": PARAMS,
-                                     "GITHUB_EVENT_NAME": "workflow_dispatch",
-                                     "GITHUB_RUN_ATTEMPT": "1",
-                                     "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF,
-                                     "GITHUB_SERVER_URL": "https://github.com"}, clear=True):
+        with self.ctx.patched_environment():
             with patch.object(delete_command, "delete", return_value="Deleted branch") as call:
                 self.assertEqual(cli.main(["delete", "branch"]), 0)
                 call.assert_called_once_with("branch", api=delete_command.github_api,
@@ -92,8 +82,8 @@ class ExecutionContract(TestSuite):
 
     def test_pr_commands_require_fresh_dispatch(self):
         for event_name, attempt in (("issue_comment", "1"), ("workflow_dispatch", "2")):
-            with patch.dict(os.environ, {"GITHUB_EVENT_NAME": event_name,
-                                         "GITHUB_RUN_ATTEMPT": attempt}, clear=True):
+            with self.ctx.patched_environment(GITHUB_EVENT_NAME=event_name,
+                                              GITHUB_RUN_ATTEMPT=attempt):
                 self.assert_rejected(PRContext("pr_merge.py").validate)
 
 
@@ -104,10 +94,7 @@ class ExecutionContract(TestSuite):
         self.assertEqual((ctx.repository, ctx.ref), (REPO, REF))
 
     def test_pr_context_exposes_validated_fields(self):
-        ctx = PRContext("pr_merge.py", env={
-            "EXECUTION_INPUTS": PARAMS, "GITHUB_EVENT_NAME": "workflow_dispatch",
-            "GITHUB_RUN_ATTEMPT": "1", "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF,
-        }).validate()
+        ctx = PRContext("pr_merge.py", env=self.ctx.environment()).validate()
         self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
                          ("7", SHA, REPO, REF))
 

@@ -1,21 +1,20 @@
 # FileRank: C
 """Offline configuration contract tests."""
 
-import unittest
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 from app.registry import configured_commands
 from config import load_names, load_registry, require_deletion
 from github.model import WorkflowRegistry
 from app.registry import execution_ids
-from tests.suites.model import TestSuite
+from tests.suites.model import TestSuite, ConfigurationTestContext
 from tests.registry import register
 
 
 @register("configuration")
 class ConfigurationContract(TestSuite):
+    context_type = ConfigurationTestContext
+
     def test_configured_commands_exclude_unlisted(self):
         with patch("app.registry.load_names", return_value=("trigger",)):
             self.assertEqual(tuple(configured_commands()), ("trigger",))
@@ -56,39 +55,28 @@ class ConfigurationContract(TestSuite):
 
 
     def test_toml_loader_preserves_array_order(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "commands.toml").write_text(
-                '# Registry order\ncommands = ["trigger", "test"]\n', encoding="utf-8")
-            with patch("config.ROOT", root):
-                self.assertEqual(load_names("commands"), ("trigger", "test"))
+        with self.ctx.registry_root({"commands.toml":
+                '# Registry order\ncommands = ["trigger", "test"]\n'}):
+            self.assertEqual(load_names("commands"), ("trigger", "test"))
 
     def test_toml_loader_rejects_duplicate_keys(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "commands.toml").write_text(
-                'commands = ["trigger"]\ncommands = ["test"]\n', encoding="utf-8")
-            with patch("config.ROOT", root):
-                with self.assertRaises(ValueError):
-                    load_registry("commands")
+        with self.ctx.registry_root({"commands.toml":
+                'commands = ["trigger"]\ncommands = ["test"]\n'}):
+            with self.assertRaises(ValueError):
+                load_registry("commands")
 
     def test_toml_loader_rejects_unexpected_root(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "commands.toml").write_text(
-                'commands = ["trigger"]\nextra = true\n', encoding="utf-8")
-            with patch("config.ROOT", root):
-                with self.assertRaises(ValueError):
-                    load_registry("commands")
+        with self.ctx.registry_root({"commands.toml":
+                'commands = ["trigger"]\nextra = true\n'}):
+            with self.assertRaises(ValueError):
+                load_registry("commands")
 
     def test_toml_loader_rejects_missing_and_symlink_files(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            with patch("config.ROOT", root):
-                with self.assertRaises(ValueError):
-                    load_registry("commands")
-                target = root / "other.toml"
-                target.write_text('commands = ["trigger"]\n', encoding="utf-8")
-                (root / "commands.toml").symlink_to(target)
-                with self.assertRaises(ValueError):
-                    load_registry("commands")
+        with self.ctx.registry_root() as root:
+            with self.assertRaises(ValueError):
+                load_registry("commands")
+            target = root / "other.toml"
+            target.write_text('commands = ["trigger"]\n', encoding="utf-8")
+            (root / "commands.toml").symlink_to(target)
+            with self.assertRaises(ValueError):
+                load_registry("commands")

@@ -1,24 +1,20 @@
 # FileRank: C
 """Offline cli contract tests."""
 
-import subprocess
-import sys
-import unittest
 from unittest.mock import Mock, patch
 
 from app import cli
 from app.commands import execute as execute_command
 from app.registry import COMMANDS, register, workflow_commands
 from app.commands.model import Command
-from tests.suites.model import TestSuite, ROOT
+from tests.suites.model import TestSuite
 from tests.registry import register as register_suite
 
 
 @register_suite("cli")
 class CliContract(TestSuite):
     def test_help_starts_real_module(self):
-        result = subprocess.run([sys.executable, "-m", "app", "--help"],
-                                cwd=ROOT, capture_output=True, text=True)
+        result = self.ctx.cli_help()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("trigger", result.stdout)
         self.assertIn("test", result.stdout)
@@ -85,8 +81,7 @@ class CliContract(TestSuite):
                     runner.return_value.run.assert_called_once_with(build.return_value)
 
     def test_test_command_help(self):
-        result = subprocess.run([sys.executable, "-m", "app", "test", "--help"],
-                                cwd=ROOT, capture_output=True, text=True)
+        result = self.ctx.cli_help("test")
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
