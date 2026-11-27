@@ -96,10 +96,11 @@ class WorkflowRegistry:
 
     @staticmethod
     def _validate_workflow(workflow):
-        if (not isinstance(workflow, str) or
-                not workflow.endswith((".yml", ".yaml")) or
-                "/" in workflow or "\\" in workflow or
-                not workflow.rsplit(".", 1)[0].replace("_", "").replace("-", "").isalnum()):
+        if (not isinstance(workflow, str) or not workflow.endswith((".yml", ".yaml"))
+                or "/" in workflow or "\\" in workflow):
+            raise ValueError("Expected a workflow filename.")
+        stem = workflow.rsplit(".", 1)[0]
+        if not stem.replace("_", "").replace("-", "").isalnum():
             raise ValueError("Expected a workflow filename.")
 
     def resolve(self, execution):
@@ -163,14 +164,19 @@ class GitHubClient:
         if response.status not in allowed:
             raise ValueError(f"Unexpected {operation} status: {response.status}")
 
+    def _execute_status(self, method, endpoint, payload, *, allowed, operation):
+        """Confirm an HTTP status inside the response scope, without decoding JSON."""
+        return self._execute(method, endpoint, payload,
+                             consume=lambda response: self._confirm(response, allowed, operation))
+
     def dispatch(self, repository, workflow, payload):
         endpoint = f"repos/{repository}/actions/workflows/{workflow}/dispatches"
-        return self._execute("POST", endpoint, payload,
-                             consume=lambda response: self._confirm(response, (200, 204), "dispatch"))
+        return self._execute_status("POST", endpoint, payload, allowed=(200, 204),
+                                    operation="dispatch")
 
     def delete(self, endpoint):
-        return self._execute("DELETE", endpoint, None,
-                             consume=lambda response: self._confirm(response, (204,), "deletion"))
+        return self._execute_status("DELETE", endpoint, None, allowed=(204,),
+                                    operation="deletion")
 
 
 # Stateless default binding: environment and credentials are read only on requests.

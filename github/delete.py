@@ -9,6 +9,25 @@ from libs.github import review_repository, matches_pr_head
 from libs.github import git_session
 
 
+def _used_by_open_pr(api, root, repository, branch):
+    """Check all open PR pages unless a matching reference already blocks deletion."""
+    page = 1
+    while True:
+        pulls = api("GET", f"{root}/pulls?state=open&per_page=100&page={page}")
+        if not isinstance(pulls, list):
+            raise ValueError("Invalid open PR response.")
+        for other in pulls:
+            for side in ("head", "base"):
+                endpoint = other[side]
+                if endpoint["ref"] == branch and (
+                    endpoint["repo"] is None
+                    or endpoint["repo"]["full_name"] == repository
+                ):
+                    return True
+        if len(pulls) < 100:
+            return False
+        page += 1
+
 
 def delete_branch(api, git, repository, run_ref, number, sha, remote):
     """Derive the deletion target from GitHub, not from user-supplied refs."""
@@ -42,23 +61,8 @@ def delete_branch(api, git, repository, run_ref, number, sha, remote):
     if details["protected"] is not False or details["commit"]["sha"] != sha:
         return "Skip: protected branch or changed head."
 
-    # Scan every page of open PRs before deleting.
-    page = 1
-    while True:
-        pulls = api("GET", f"{root}/pulls?state=open&per_page=100&page={page}")
-        if not isinstance(pulls, list):
-            raise ValueError("Invalid open PR response.")
-        for other in pulls:
-            for side in ("head", "base"):
-                endpoint = other[side]
-                if endpoint["ref"] == branch and (
-                    endpoint["repo"] is None
-                    or endpoint["repo"]["full_name"] == repository
-                ):
-                    return "Skip: branch is used by an open PR."
-        if len(pulls) < 100:
-            break
-        page += 1
+    if _used_by_open_pr(api, root, repository, branch):
+        return "Skip: branch is used by an open PR."
 
     # The server rejects the ref update if its SHA changed since verification.
     git("push", f"--force-with-lease={ref}:{sha}", remote, f":{ref}")

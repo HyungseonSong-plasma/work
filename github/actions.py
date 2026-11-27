@@ -164,6 +164,26 @@ def delete_actions_run(api, remove, repository, run_ref, run_id,
         report=lambda message: None)[0]
 
 
+def _request_from_args(args):
+    """Build the exact single or batch request before checking approval."""
+    if args.runs:
+        if any(value is not None for value in
+               tuple(getattr(args, key) for key in _TARGET_FIELDS)):
+            raise ValueError("Choose single or batch, not both.")
+        return {"execution": "delete actions", "runs": json.loads(args.runs)}
+    return dict(execution="delete actions",
+                **{key: getattr(args, key) for key in _TARGET_FIELDS})
+
+
+def _approved_targets(inputs, batch):
+    """Normalize only after approval has been checked against the wire inputs."""
+    if batch:
+        return json.loads(inputs["runs"])
+    return [{"run_id": int(inputs["run_id"]),
+             "expected_head_sha": inputs["expected_head_sha"],
+             "expected_run_attempt": int(inputs["expected_run_attempt"])}]
+
+
 class ActionsContext(Context):
     """Validate exact owner approval, then normalize single and batch targets."""
 
@@ -175,23 +195,12 @@ class ActionsContext(Context):
     def validate(self):
         self.require_event("workflow_dispatch", fresh=True)
         args = self.args
-        if args.runs:
-            if any(value is not None for value in
-                   tuple(getattr(args, key) for key in _TARGET_FIELDS)):
-                raise ValueError("Choose single or batch, not both.")
-            request = {"execution": "delete actions", "runs": json.loads(args.runs)}
-        else:
-            request = dict(execution="delete actions",
-                           **{key: getattr(args, key) for key in _TARGET_FIELDS})
         # Preserve the approved wire format during comparison, normalize afterwards.
-        inputs = actions_request(request)
+        inputs = actions_request(_request_from_args(args))
         self._validate_approval(self.read_event(), inputs)
         if self.run_id <= 0:
             raise ValueError("Invalid current run ID.")
-        self.targets = (json.loads(inputs["runs"]) if args.runs else
-                        [{"run_id": int(inputs["run_id"]),
-                          "expected_head_sha": inputs["expected_head_sha"],
-                          "expected_run_attempt": int(inputs["expected_run_attempt"])}])
+        self.targets = _approved_targets(inputs, args.runs)
         return self
 
     def _validate_approval(self, event, inputs):
@@ -221,6 +230,10 @@ class ActionsContext(Context):
             actor_id == "41898282" and sender["login"] == "github-actions[bot]"
         ):
             raise ValueError("Unauthorized dispatch actor.")
+        self._validate_source(api, repository, repo, request_id, source_pr, inputs)
+
+    def _validate_source(self, api, repository, repo, request_id, source_pr, inputs):
+        """Re-fetch the exact source PR/comment and compare approved wire inputs."""
         root = f"repos/{repository}"
         comment_id = int(request_id.split("-", 1)[1])
         comment = api("GET", f"{root}/issues/comments/{comment_id}")
