@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 # Adding a script here grants it the workflow's permissions.
-EXECUTIONS = frozenset({"pr_merge.py"})
+EXECUTIONS = frozenset({"pr_merge.py", "branch_delete.py"})
 
 
 def resolve_execution(name, parameters):
