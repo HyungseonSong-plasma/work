@@ -2,6 +2,9 @@
 """Build and inspect application distributions; install each in a separate venv."""
 
 import argparse
+import base64
+import csv
+import io
 from email.parser import BytesParser
 import hashlib
 from pathlib import Path
@@ -116,15 +119,26 @@ child.assert_called_once_with([sys.executable, "-E", "-s", "-m", "work", "merge"
                               cwd=Path(work.__file__).resolve().parent.parent, check=False)
 assert cli.main(["test"]) == 1
 # A real child with no credentials or event must refuse before any remote request.
-with patch.dict(os.environ, {"PATH": os.defpath}, clear=True):
-    assert execute.run_execution(("pr_merge.py",)) == 1
+# Poison PYTHONPATH from an unrelated directory; the child must ignore it.
+shadow = Path.cwd() / "work.py"
+marker = Path.cwd() / "shadow-loaded"
+shadow.write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").touch()\n", encoding="utf-8")
+try:
+    safe_env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "WINDIR")
+                if key in os.environ}
+    safe_env["PYTHONPATH"] = str(Path.cwd())
+    with patch.dict(os.environ, safe_env, clear=True):
+        assert execute.run_execution(("pr_merge.py",)) == 1
+    assert not marker.exists(), "Untrusted PYTHONPATH was loaded"
+finally:
+    shadow.unlink()
 print("Installed application smoke passed; canonical imports, resources, child execution and seven bindings verified.")
 '''
 
 
 def run(*args, cwd):
     print("+", *map(str, args), flush=True)
-    subprocess.run([str(arg) for arg in args], cwd=cwd, check=True)
+    subprocess.run([str(arg) for arg in args], cwd=cwd, check=True, timeout=180)
 
 
 def check_metadata(data):
@@ -142,6 +156,20 @@ def check_sources(files):
         assert files[name] == (ROOT / "src" / name).read_bytes(), name
 
 
+def check_record(files, dist_info):
+    record = dist_info + "RECORD"
+    rows = list(csv.reader(io.StringIO(files[record].decode("utf-8"))))
+    assert all(len(row) == 3 for row in rows)
+    assert len(rows) == len({row[0] for row in rows})
+    assert {row[0] for row in rows} == set(files)
+    for name, digest, size in rows:
+        if name == record:
+            assert digest == size == ""
+        else:
+            expected = base64.urlsafe_b64encode(hashlib.sha256(files[name]).digest()).rstrip(b"=").decode("ascii")
+            assert digest == "sha256=" + expected and size == str(len(files[name])), name
+
+
 def check_archives(wheel, sdist):
     dist_info = STEM + ".dist-info/"
     with zipfile.ZipFile(wheel) as archive:
@@ -153,6 +181,8 @@ def check_archives(wheel, sdist):
         check_metadata(files[dist_info + "METADATA"])
         assert files[dist_info + "top_level.txt"].splitlines() == [b"work"]
         assert b"work = work.app.cli:main" in files[dist_info + "entry_points.txt"]
+        check_record(files, dist_info)
+        assert b"Tag: py3-none-any" in files[dist_info + "WHEEL"]
     # Never extract an untrusted archive: inspect only regular files.
     with tarfile.open(sdist, "r:gz") as archive:
         members = archive.getmembers()
