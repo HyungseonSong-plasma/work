@@ -14,6 +14,8 @@ def register(name):
         if not all(callable(getattr(command, attr, None))
                    for attr in ("configure", "execute")):
             raise TypeError("Command requires configure and execute methods.")
+        if not isinstance(getattr(command, "help", None), str):
+            raise TypeError("Command requires a help string.")
         COMMANDS[name] = command
         return command
     return decorator
