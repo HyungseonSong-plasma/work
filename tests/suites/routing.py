@@ -4,7 +4,9 @@
 from unittest.mock import Mock, MagicMock, patch
 
 from github import trigger
-from github.model import WorkflowRegistry
+from app.commands.trigger import route_registry
+from app.framework.registry import resolve_execution
+from github.framework.registry import WorkflowRegistry
 from tests.framework.model import TestSuite, WorkflowTestContext, REPO, REF
 from tests.framework.registry import register
 
@@ -22,7 +24,8 @@ class RoutingContract(TestSuite):
 
         def check(ctx, expression, expected):
             dispatch = Mock()
-            self.assertEqual(trigger.dispatch_request(ctx.event(expression), REPO, REF, dispatch),
+            self.assertEqual(trigger.dispatch_request(ctx.event(expression), REPO, REF, dispatch,
+                                                      routes=route_registry, resolve=resolve_execution),
                              (expected, "comment-12"))
             dispatch.assert_called_once()
             self.assertEqual(dispatch.call_args.args[1], expected)
@@ -42,9 +45,9 @@ class RoutingContract(TestSuite):
             request = ctx.event(expression)
             request["sender"]["id"] = sender_id
             dispatch = Mock()
-            registry = trigger.registry if registered else WorkflowRegistry()
-            with patch.object(trigger, "registry", registry):
-                self.assert_rejected(trigger.dispatch_request, request, repository, ref, dispatch)
+            registry = route_registry if registered else WorkflowRegistry()
+            self.assert_rejected(trigger.dispatch_request, request, repository, ref, dispatch,
+                                 routes=registry, resolve=resolve_execution)
             dispatch.assert_not_called()
 
         self.run_cases(cases, check)
@@ -105,7 +108,7 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_shared_validation_rejects_invalid_types(self):
-        from github.model import validate_sha, validate_pr_number, require_default_ref
+        from github.framework.model import validate_sha, validate_pr_number, require_default_ref
         cases = (
             ("pr_boolean", validate_pr_number, (True,)),
             ("pr_none", validate_pr_number, (None,)),
@@ -130,7 +133,8 @@ class RoutingContract(TestSuite):
     def test_trigger_parses_owner_comment_once(self):
         def check(ctx):
             with patch.object(trigger, "owner_comment", wraps=trigger.owner_comment) as parse:
-                trigger.dispatch_request(ctx.event("pr_merge.py"), REPO, REF, Mock())
+                trigger.dispatch_request(ctx.event("pr_merge.py"), REPO, REF, Mock(),
+                                         routes=route_registry, resolve=resolve_execution)
                 parse.assert_called_once()
 
         self.run_contract(check=check)
@@ -139,7 +143,7 @@ class RoutingContract(TestSuite):
         cases = (("json_get", "GET", None), ("json_put", "PUT", {"sha": "a" * 40}))
 
         def check(ctx, method, payload):
-            from github.model import github_api
+            from github.framework.transport import github_api
             from io import BytesIO
             import os
             response = MagicMock()
@@ -173,7 +177,7 @@ class RoutingContract(TestSuite):
         )
 
         def check(ctx, method, status, allowed):
-            from github.model import dispatch_workflow, delete_resource
+            from github.framework.transport import dispatch_workflow, delete_resource
             import os
             response = MagicMock()
             response.__enter__.return_value.status = status
@@ -208,7 +212,7 @@ class RoutingContract(TestSuite):
                  ("json_timeout", "json"))
 
         def check(ctx, operation):
-            from github.model import dispatch_workflow, delete_resource, github_api
+            from github.framework.transport import dispatch_workflow, delete_resource, github_api
             import os
             send = Mock(side_effect=TimeoutError("ambiguous response"))
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
@@ -227,7 +231,7 @@ class RoutingContract(TestSuite):
 
     def test_rest_json_transport_rejects_invalid_response_and_closes(self):
         def check(ctx):
-            from github.model import github_api
+            from github.framework.transport import github_api
             from io import BytesIO
             import json
             import os
@@ -241,5 +245,36 @@ class RoutingContract(TestSuite):
             send.assert_called_once()
             response.__exit__.assert_called_once()
             self.assertIs(response.__exit__.call_args.args[0], json.JSONDecodeError)
+
+        self.run_contract(check=check)
+
+    def test_domain_imports_without_application_layer(self):
+        def check(ctx):
+            import subprocess
+            import sys
+            from tests.framework.model import ROOT
+            code = ("import sys; import github.framework.model; import github.framework.registry; "
+                    "import github.framework.transport; import github.trigger; "
+                    "import github.actions; import github.delete; import github.merge; "
+                    "assert not any(name == 'app' or name.startswith('app.') for name in sys.modules)")
+            result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.run_contract(check=check)
+
+    def test_injected_route_resolver_cannot_dispatch_on_rejection(self):
+        def check(ctx):
+            resolver = Mock(side_effect=ValueError("rejected execution"))
+            routes = Mock()
+            dispatch = Mock()
+            event = ctx.event("pr_merge.py")
+            with self.assertRaisesRegex(ValueError, "rejected execution"):
+                trigger.dispatch_request(event, REPO, REF, dispatch,
+                                         routes=routes, resolve=resolver)
+            resolver.assert_called_once_with("pr_merge.py",
+                '{"pr_number": 7, "expected_head_sha": "' + "a" * 40 + '"}')
+            routes.resolve.assert_not_called()
+            dispatch.assert_not_called()
 
         self.run_contract(check=check)

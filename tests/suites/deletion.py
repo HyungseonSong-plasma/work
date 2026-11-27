@@ -7,11 +7,13 @@ from unittest.mock import Mock, call, patch
 
 from app.framework.model import ActionsContext
 from types import SimpleNamespace
-from github import delete as deletion
-from github.model import delete_resource
+from github import actions, delete as deletion
+from github.framework.transport import delete_resource
 from tests.framework.registry import register
 from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
+from app.commands.trigger import route_registry
+from app.framework.registry import resolve_execution
 
 
 @register("deletion")
@@ -134,7 +136,7 @@ class DeletionContract(TestSuite):
 
     def test_pinned_run_cannot_be_deleted(self):
         def check(ctx):
-            pinned = deletion.actions_policy()["pinned_run_ids"][0]
+            pinned = actions.actions_policy()["pinned_run_ids"][0]
             ctx.run_data["id"] = pinned
             self.assert_rejected(deletion.delete, "actions", **dict(ctx.parameters, run_id=pinned))
             ctx.remove.assert_not_called()
@@ -177,7 +179,7 @@ class DeletionContract(TestSuite):
 
         def check(ctx, ids):
             targets = [ctx.target(run_id) for run_id in ids]
-            self.assert_rejected(deletion.validate_actions_targets, targets)
+            self.assert_rejected(actions.validate_actions_targets, targets)
 
         self.run_cases(cases, check)
 
@@ -189,7 +191,8 @@ class DeletionContract(TestSuite):
             request["comment"].update(created_at="now", updated_at="now",
                 body="/execute " + json.dumps({"execution": "delete actions", "runs": targets}))
             dispatch = Mock()
-            self.assertEqual(trigger.dispatch_request(request, REPO, REF, dispatch),
+            self.assertEqual(trigger.dispatch_request(request, REPO, REF, dispatch,
+                                         routes=route_registry, resolve=resolve_execution),
                              ("actions_delete.yml", "comment-12"))
             dispatch.assert_called_once()
             self.assertEqual(json.loads(dispatch.call_args.args[2]["inputs"]["runs"]), targets)
@@ -226,7 +229,7 @@ class DeletionContract(TestSuite):
             send = MagicMock()
             send.return_value.__enter__.return_value = response
             endpoint = "repos/example/work/actions/runs/12"
-            with patch("github.model._request") as request:
+            with patch("github.framework.transport._request") as request:
                 if allowed:
                     delete_resource(endpoint, send=send)
                     request.assert_called_once_with("DELETE", endpoint)
@@ -243,7 +246,8 @@ class DeletionContract(TestSuite):
                 "execution": "delete actions", "run_id": 12,
                 "expected_head_sha": SHA, "expected_run_attempt": 1})
             dispatch = Mock()
-            workflow, request_id = trigger.dispatch_request(request, REPO, REF, dispatch)
+            workflow, request_id = trigger.dispatch_request(request, REPO, REF, dispatch,
+                                         routes=route_registry, resolve=resolve_execution)
             self.assertEqual((workflow, request_id), ("actions_delete.yml", "comment-12"))
             dispatch.assert_called_once_with(REPO, workflow, {
                 "ref": "main", "inputs": {"run_id": "12", "expected_head_sha": SHA,
@@ -265,7 +269,8 @@ class DeletionContract(TestSuite):
             body = dict(ctx.target(), execution="delete actions")
             request["comment"]["body"] = "/execute " + json.dumps(dict(body, **changes))
             dispatch = Mock()
-            self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch)
+            self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch,
+                                 routes=route_registry, resolve=resolve_execution)
             dispatch.assert_not_called()
 
         self.run_cases(cases, check)
@@ -502,7 +507,7 @@ class DeletionContract(TestSuite):
                 return "Done"
 
             with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
-                    patch.object(deletion.subprocess, "run",
+                    patch("github.framework.transport.subprocess.run",
                                  side_effect=[None, SimpleNamespace(returncode=status)]) as run:
                 args = (ctx.api, REPO, REF, "7", SHA, "remote")
                 if status:
@@ -545,7 +550,7 @@ class DeletionContract(TestSuite):
                 report.side_effect = ValueError("report failed")
             targets = [ctx.target(i) for i in (12, 14, 15)]
             with self.assertRaises(ValueError):
-                deletion.delete_actions_batch(targets=targets, report=report, **ctx.batch_parameters)
+                actions.delete_actions_batch(targets=targets, report=report, **ctx.batch_parameters)
             root = "repos/example/work"
             endpoint = root + "/actions/runs/"
             expected = [call.api("GET", root),
@@ -586,7 +591,7 @@ class DeletionContract(TestSuite):
                 listing = []
             total = 1 if defect == "count" else len(listing)
             ctx.api.side_effect = [ctx.repo, run, {"total_count": total, "workflow_runs": listing}]
-            self.assert_rejected(deletion.delete_actions_run, **ctx.parameters)
+            self.assert_rejected(actions.delete_actions_run, **ctx.parameters)
             self.assertEqual(ctx.api.call_args_list, [
                 call("GET", "repos/example/work"),
                 call("GET", "repos/example/work/actions/runs/12"),
