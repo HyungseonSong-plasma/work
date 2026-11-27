@@ -94,3 +94,5 @@ The approved external execution IDs `pr_merge.py` and `branch_delete.py` remain 
 Post-refactor live verification uses the unchanged serial PR comment contract to launch the registered merge and delete branch commands via the unified registry.
 
 After standardizing the thin command adapters, verify the unchanged serial comment route and the dedicated Actions deletion context through the post-change default branch.
+
+Verify the context model on the post-change default branch using the unchanged serial comment route and both single and batch Actions deletion requests.
