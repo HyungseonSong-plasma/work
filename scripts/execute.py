@@ -2,7 +2,6 @@
 """Execute registered scripts serially from the trusted checkout."""
 
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,47 +46,6 @@ def run_execution(scripts, run=subprocess.run):
                   file=sys.stderr, flush=True)
             return result.returncode if result.returncode > 0 else 1
     return 0
-
-
-def comment_request(event):
-    """Accept only an owner-authored execution command on its target PR."""
-    owner = event["repository"]["owner"]["id"]
-    comment = event["comment"]
-    issue = event["issue"]
-    if not (
-        event["action"] == "created"
-        and "pull_request" in issue
-        and comment["user"]["id"] == owner
-        and event["sender"]["id"] == owner
-        and comment["author_association"] == "OWNER"
-    ):
-        raise ValueError("Unauthorized execution comment.")
-    prefix = "/execute "
-    if not comment["body"].startswith(prefix):
-        raise ValueError("Not an execution command.")
-    request = json.loads(comment["body"][len(prefix):])
-    if not isinstance(request, dict) or set(request) not in (
-        {"execution", "expected_head_sha"},
-        {"execution", "expected_head_sha", "queue_comment_id"},
-    ):
-        raise ValueError("Invalid execution command fields.")
-    if not isinstance(request["execution"], str):
-        raise ValueError("Expected an execution string.")
-    sha = request["expected_head_sha"]
-    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
-        raise ValueError("Expected a full lowercase Git commit SHA.")
-    if "queue_comment_id" in request and (
-        type(request["queue_comment_id"]) is not int
-        or request["queue_comment_id"] <= 0
-    ):
-        raise ValueError("Invalid queue comment ID.")
-    number = issue["number"]
-    if type(number) is not int or number <= 0:
-        raise ValueError("Invalid pull request number.")
-    return request["execution"], json.dumps({
-        "pr_number": number,
-        "expected_head_sha": sha,
-    })
 
 
 def run_stage(scripts, stage, run=subprocess.run):
