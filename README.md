@@ -36,7 +36,7 @@ Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submissio
 
 ### GitHub integration
 
-The repository-root `github/model.py` is the shared GitHub REST API transport and workflow dispatch module. Execution and routing policies remain in `scripts/`. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and routing functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
+The repository-root `github/model.py` provides shared GitHub REST API transport, workflow dispatch, and a generic ordered `WorkflowRegistry`. `github/trigger.py` registers the supported workflow routes, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and execution functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
 
 ### Unified CLI
 
@@ -57,3 +57,7 @@ These commands consume the existing GitHub event and execution environment varia
 Run offline regression tests with `python3 -m unittest discover -s tests -v`.
 
 For an end-to-end CLI regression check, use a reviewed documentation-only PR and submit the existing serial execution command. Confirm that Trigger submits exactly one Serial Run, Merge completes before Delete starts, the PR is merged, and its unchanged head branch is absent. Inspect the run logs rather than relying only on the workflow conclusion.
+
+### Adding workflow routes
+
+Register exact ordered script tuples in `github/trigger.py` using `registry.register(chain, workflow_filename)`. Single-script routes are registered from the existing execution allowlist; serial chains are explicitly registered. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new scripts: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
