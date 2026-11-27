@@ -54,32 +54,45 @@ class CliContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_registered_command_extends_cli_without_branch(self):
-        with patch.dict(COMMANDS):
-            @register("sample")
-            class SampleCommand(Command):
-                help = "Test-only command"
+        def check(ctx):
+            with patch.dict(COMMANDS):
+                @register("sample")
+                class SampleCommand(Command):
+                    help = "Test-only command"
 
-                @staticmethod
-                def configure(parser):
-                    parser.add_argument("--value", type=int, required=True)
+                    @staticmethod
+                    def configure(parser):
+                        parser.add_argument("--value", type=int, required=True)
 
-                @staticmethod
-                def execute(args):
-                    return args.value
+                    @staticmethod
+                    def execute(args):
+                        return args.value
 
-            with patch("app.framework.registry.load_names", return_value=("sample",)):
-                self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
+                with patch("app.framework.registry.load_names", return_value=("sample",)):
+                    self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
+
+        self.run_contract(check=check)
 
     def test_duplicate_registration_rejected(self):
-        original = COMMANDS["trigger"]
-        with self.assertRaises(ValueError):
-            register("trigger")(original)
-        self.assertIs(COMMANDS["trigger"], original)
+        def remember(ctx):
+            ctx.original = COMMANDS["trigger"]
+
+        def reject_duplicate(ctx):
+            self.assert_rejected(register("trigger"), ctx.original)
+
+        def check(ctx):
+            self.assertIs(COMMANDS["trigger"], ctx.original)
+
+        steps = (("remember", remember), ("reject_duplicate", reject_duplicate))
+        self.run_scenario(steps, check)
 
     def test_invalid_registration_rejected(self):
-        with self.assertRaises(TypeError):
-            register("invalid")(object)
-        self.assertNotIn("invalid", COMMANDS)
+        def check(ctx):
+            with self.assertRaises(TypeError):
+                register("invalid")(object)
+            self.assertNotIn("invalid", COMMANDS)
+
+        self.run_contract(check=check)
 
     def test_test_command_exit_status(self):
         cases = (
@@ -100,10 +113,13 @@ class CliContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_workflow_projection_exact(self):
-        self.assertEqual(workflow_commands(), {
-            "pr_merge.py": ("merge",),
-            "branch_delete.py": ("delete", "branch"),
-        })
+        def check(ctx):
+            self.assertEqual(workflow_commands(), {
+                "pr_merge.py": ("merge",),
+                "branch_delete.py": ("delete", "branch"),
+            })
+
+        self.run_contract(check=check)
 
     def test_workflow_projection_rejects_invalid_bindings(self):
         cases = (
@@ -134,8 +150,11 @@ class CliContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_delete_command_delegates_to_module_execute(self):
-        from app.commands import delete
-        with patch.object(delete, "execute", return_value=0) as run:
-            self.assertEqual(cli.main(["delete", "branch"]), 0)
-            run.assert_called_once()
-            self.assertEqual(run.call_args.args[0].target, "branch")
+        def check(ctx):
+            from app.commands import delete
+            with patch.object(delete, "execute", return_value=0) as run:
+                self.assertEqual(cli.main(["delete", "branch"]), 0)
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0].target, "branch")
+
+        self.run_contract(check=check)

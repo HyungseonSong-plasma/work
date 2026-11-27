@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 from tests.framework.model import TestSuite
 from tests.framework.registry import SUITES, build_suite, register
+from tests.framework.validation import validate_method
 
 
 @register("registry")
@@ -13,11 +14,15 @@ class RegistryContract(TestSuite):
     def test_manifest_order_and_count(self):
         class First(TestSuite):
             def test_one(self):
-                pass
+                def check(ctx):
+                    pass
+                self.run_contract(check=check)
 
         class Second(TestSuite):
             def test_two(self):
-                pass
+                def check(ctx):
+                    pass
+                self.run_contract(check=check)
 
         suite = build_suite(names=["second", "first"],
                             registered={"first": First, "second": Second})
@@ -271,7 +276,7 @@ class RegistryContract(TestSuite):
             with self.subTest(steps=bad_steps):
                 self.assert_rejected(self.run_scenario, bad_steps, check, arrange=arrange)
         self.assert_rejected(self.run_scenario, (("x", act),), None, arrange=arrange)
-        self.assert_rejected(self.run_contract, None, check, arrange=arrange)
+        self.assert_rejected(self.run_contract, False, check, arrange=arrange)
         self.assert_rejected(self.run_contract, act, None, arrange=arrange)
         self.assert_rejected(self.run_contract, act, check, arrange=arrange, raises="error")
         self.assert_rejected(self.run_contract, act, check, arrange=False)
@@ -294,3 +299,82 @@ class RegistryContract(TestSuite):
         with self.assertRaisesRegex(AssertionError, "suppressed"):
             self.run_scenario((("broken", act),), check, arrange=arrange)
         check.assert_not_called()
+
+    def test_compact_contract_runner_scope_and_fresh_context(self):
+        contexts, active = [], []
+
+        @contextmanager
+        def arrange(ctx):
+            active.append(ctx)
+            try:
+                yield
+            finally:
+                active.pop()
+
+        def check(ctx):
+            contexts.append(ctx)
+            self.assertEqual(active, [ctx])
+
+        for _ in range(2):
+            self.run_contract(check=check, arrange=arrange)
+            self.assertEqual(active, [])
+        self.assertIsNot(contexts[0], contexts[1])
+        with self.assertRaises(ValueError):
+            self.run_contract(check=check, raises=ValueError)
+
+    def test_matrix_validates_all_rows_before_callback(self):
+        check = Mock()
+        for rows in (None, ((" ", 1),), (("valid", 1), ("bad", 2, 3))):
+            with self.subTest(rows=rows):
+                callback = check if rows is None or rows[0][0] == " " else lambda ctx, value: check(value)
+                self.assert_rejected(self.run_cases, rows, callback)
+        self.assert_rejected(self.run_cases, (("valid", 1),), None)
+        check.assert_not_called()
+
+    def test_structure_validation_accepts_three_runner_forms(self):
+        bodies = (
+            "cases = ((\"a\", 1),)\n    def check(ctx, value):\n        pass\n    self.run_cases(cases, check)",
+            "def check(ctx):\n        pass\n    self.run_contract(check=check)",
+            "def act(ctx):\n        return 1\n    def check(ctx, result):\n        pass\n    self.run_contract(act, check)",
+            "def first(ctx):\n        pass\n    def check(ctx):\n        pass\n    steps = ((\"first\", first),)\n    self.run_scenario(steps, check)",
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                validate_method("def test_example(self):\n    " + body)
+
+    def test_structure_validation_rejects_direct_or_multiple_execution(self):
+        valid = "def check(ctx):\n        pass\n    self.run_contract(check=check)"
+        bodies = (
+            "self.assertTrue(True)",
+            "self.assertTrue(True)\n    " + valid,
+            valid + "\n    self.run_contract(check=check)",
+            "if True:\n        self.run_contract(check=check)",
+            "def check(ctx):\n        self.run_contract(check=check)\n    self.run_contract(check=check)",
+            "def check(ctx):\n        self.ctx.api()\n    self.run_contract(check=check)",
+            "value = operation()\n    " + valid,
+            "def unused(ctx):\n        pass\n    " + valid,
+            "def check(ctx):\n        pass\n    self.run_cases(((\"x\",),), check)",
+            "def check(ctx):\n        pass\n    self.run_contract(check=check, raises=ValueError)",
+        )
+        for body in bodies:
+            with self.subTest(body=body):
+                self.assert_rejected(validate_method, "def test_example(self):\n    " + body)
+
+    def test_registry_rejects_unstructured_or_overridden_suite(self):
+        class Direct(TestSuite):
+            def test_direct(self):
+                self.assertTrue(True)
+
+        class Override(TestSuite):
+            def run_contract(self, *args, **kwargs):
+                pass
+
+            def test_contract(self):
+                def check(ctx):
+                    pass
+                self.run_contract(check=check)
+
+        for case in (Direct, Override):
+            with self.subTest(case=case.__name__):
+                self.assert_rejected(build_suite, names=["example"], registered={"example": case})
+                self.assert_rejected(build_suite, names=["registry"], registered={"registry": case})

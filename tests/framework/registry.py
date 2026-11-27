@@ -1,7 +1,10 @@
 # FileRank: C
 """Explicit test-suite registry; never import modules named by configuration."""
 
+import sys
 import unittest
+
+from tests.framework.validation import validate_suite
 
 from config import load_names
 
@@ -34,7 +37,17 @@ def build_suite(loader=None, names=None, registered=None):
         raise ValueError("Test manifest and registered suites do not match.")
     suite = unittest.TestSuite()
     for name in names:
-        cases = loader.loadTestsFromTestCase(registered[name])
+        case = registered[name]
+        # One explicitly identified framework self-test class, not a module-wide bypass.
+        module = sys.modules.get("tests.framework_tests.registry_contract")
+        framework_test = (name == "registry" and module is not None
+                          and case is getattr(module, "RegistryContract", None))
+        expected = (tuple(unittest.defaultTestLoader.getTestCaseNames(case))
+                    if framework_test else validate_suite(case))
+        cases = loader.loadTestsFromTestCase(case)
+        loaded = tuple(test._testMethodName for test in cases if type(test) is case)
+        if loaded != expected or len(loaded) != cases.countTestCases():
+            raise ValueError(f"Unexpected test loader coverage: {name}")
         if not cases.countTestCases():
             raise ValueError(f"Empty registered suite: {name}")
         suite.addTests(cases)
