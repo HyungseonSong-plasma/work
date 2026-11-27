@@ -90,3 +90,5 @@ After changing the shared deletion framework, verify the legacy branch execution
 Batch comment: `/execute {"execution":"delete actions","runs":[{"run_id":123,"expected_head_sha":"<full SHA>","expected_run_attempt":1}]}`. The original single-run format remains supported. Never use implicit selectors. Only one deletion workflow may execute at a time; GitHub may replace pending concurrency-group runs, so submit one batch at a time.
 
 The approved external execution IDs `pr_merge.py` and `branch_delete.py` remain unchanged, as do workflow YAML, permissions, comment syntax and the Controller queue allowlist. Branch and Actions deletion share DeleteCommand but keep independent authorization and target validation; only branch deletion is eligible for PR execution chains.
+
+Post-refactor live verification uses the unchanged serial PR comment contract to launch the registered merge and delete branch commands via the unified registry.
