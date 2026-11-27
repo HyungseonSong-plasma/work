@@ -1,0 +1,82 @@
+# FileRank: C
+name: Delete merged branch
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  delete-merged-branch:
+    if: >-
+      ${{ github.event.pull_request.merged == true &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.base.ref == github.event.repository.default_branch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      # Never check out or execute PR code with this write token.
+      - name: Delete the unchanged, unused PR head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          ref="refs/heads/$HEAD_BRANCH"
+          git check-ref-format "$ref"
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          default_branch=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.default_branch')
+          if [[ "$BASE_BRANCH" != "$default_branch" ||
+                "$HEAD_BRANCH" == "$default_branch" ||
+                "$HEAD_BRANCH" == "main" || "$HEAD_BRANCH" == "master" ]]; then
+            echo "Skip: default or reserved branch, or non-default merge target."
+            exit 0
+          fi
+
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          git init -q "$tmp"
+          gh auth setup-git
+          remote="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          if current=$(git -C "$tmp" ls-remote --exit-code --refs "$remote" "$ref"); then
+            if [[ "$current" != "$HEAD_SHA"$'\t'"$ref" ]]; then
+              echo "Skip: branch head has changed."
+              exit 0
+            fi
+          else
+            status=$?
+            if [[ "$status" == 2 ]]; then
+              echo "Skip: branch already absent."
+              exit 0
+            fi
+            exit "$status"
+          fi
+
+          encoded=$(jq -rn --arg ref "$HEAD_BRANCH" '$ref | @uri')
+          branch=$(gh api "repos/$GITHUB_REPOSITORY/branches/$encoded")
+          if ! jq -e --arg sha "$HEAD_SHA" '.protected == false and .commit.sha == $sha' <<< "$branch" >/dev/null; then
+            echo "Skip: protected branch or branch head has changed."
+            exit 0
+          fi
+
+          open_prs=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100")
+          in_use=$(jq --arg branch "$HEAD_BRANCH" --arg repo "$GITHUB_REPOSITORY" '
+            any(.[][]; (.head.repo.full_name == $repo and .head.ref == $branch)
+                    or (.base.repo.full_name == $repo and .base.ref == $branch))
+          ' <<< "$open_prs")
+          if [[ "$in_use" != false ]]; then
+            echo "Skip: branch is used by an open PR."
+            exit 0
+          fi
+
+          # Server-side lease rejects deletion if a new commit arrives.
+          git -C "$tmp" push --force-with-lease="$ref:$HEAD_SHA" "$remote" ":$ref"
+          echo "Deleted merged PR head: $HEAD_BRANCH"
