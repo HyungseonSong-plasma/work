@@ -1,0 +1,14 @@
+# FileRank: C
+# Permission descriptions are informational only.
+
+[deletions.branch]
+enabled = true
+permission = "contents: write"
+
+[deletions.actions]
+enabled = false
+permission = "actions: write"
+
+[deletions.issue]
+enabled = false
+permission = "owner authorization"

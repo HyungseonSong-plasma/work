@@ -73,8 +73,8 @@ class WorkflowRegistry:
 
 
     @classmethod
-    def from_json(cls, entries, allowed_executions):
-        """Load validated route data, never importing or executing JSON values."""
+    def from_entries(cls, entries, allowed_executions):
+        """Load validated route data, never importing or executing configuration values."""
         if not isinstance(entries, list) or not entries:
             raise ValueError("Invalid workflow registry.")
         registry = cls()
@@ -82,7 +82,7 @@ class WorkflowRegistry:
             if not isinstance(entry, dict) or set(entry) != {"execution", "workflow"}:
                 raise ValueError("Invalid workflow route entry.")
             if not isinstance(entry["execution"], list):
-                raise ValueError("Workflow execution must be a JSON array.")
+                raise ValueError("Workflow execution must be an array.")
             chain = cls._key(entry["execution"])
             if not set(chain).issubset(allowed_executions):
                 raise ValueError("Workflow contains a disabled or unknown execution.")

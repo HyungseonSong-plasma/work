@@ -1,29 +1,23 @@
 # FileRank: C
 """Trusted, version-controlled registry configuration."""
 
-import json
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"Duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
 def load_registry(name):
     if name not in {"commands", "executions", "workflows", "deletions", "tests"}:
         raise ValueError("Unknown registry file.")
-    path = ROOT / (name + ".json")
+    path = ROOT / (name + ".toml")
     if path.is_symlink() or not path.is_file():
         raise ValueError("Registry must be a regular file.")
-    with path.open(encoding="utf-8") as stream:
-        return json.load(stream, object_pairs_hook=_unique_object)
+    with path.open("rb") as stream:
+        document = tomllib.load(stream)
+    if set(document) != {name}:
+        raise ValueError(f"Invalid {name} registry root.")
+    return document[name]
 
 
 def load_names(name):

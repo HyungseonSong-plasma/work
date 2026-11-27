@@ -24,7 +24,7 @@ def register(name):
 
 
 def configured_commands():
-    """Select only explicitly registered implementations named in JSON."""
+    """Select only explicitly registered implementations named in configuration."""
     names = load_names("commands")
     if any(name not in COMMANDS for name in names):
         raise ValueError("Unknown configured command.")

@@ -36,7 +36,7 @@ Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submissio
 
 ### GitHub integration
 
-The repository-root `github/model.py` provides shared GitHub REST API transport, workflow dispatch, and a generic ordered `WorkflowRegistry`. `github/trigger.py` loads the supported workflow routes from `config/workflows.json`, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and execution functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
+The repository-root `github/model.py` provides shared GitHub REST API transport, workflow dispatch, and a generic ordered `WorkflowRegistry`. `github/trigger.py` loads the supported workflow routes from `config/workflows.toml`, validates GitHub PR comments, and dispatches exactly one matching workflow. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and execution functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
 
 ### Unified CLI
 
@@ -53,7 +53,7 @@ These commands consume the existing GitHub event and execution environment varia
 
 ### Adding CLI commands
 
-`app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.json`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
+`app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.toml`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
 
 Run offline regression tests with `python3 -m app test`.
 
@@ -61,16 +61,16 @@ For an end-to-end CLI regression check, use a reviewed documentation-only PR and
 
 ### Adding workflow routes
 
-Register exact ordered script arrays and workflow filenames in `config/workflows.json`. The loader checks each script against `config/executions.json`. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new scripts: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
+Register exact ordered script arrays and workflow filenames in `config/workflows.toml`. The loader checks each script against `config/executions.toml`. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new scripts: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
 
 When verifying a workflow route change, confirm the Trigger and worker runs both use the post-change default-branch commit. A successful merge of the change itself exercises the previous implementation and is not sufficient evidence for the new route registry.
 
 ### Registry configuration
 
-The four C-rank JSON registries under `config/` define CLI command names, execution allowlists, ordered workflow routes and deletion availability. Code still binds explicitly imported implementations; JSON cannot import arbitrary modules, create workflow permissions or bypass validation. `config/deletions.json` enables only branch deletion; issue deletion is disabled because the default GITHUB_TOKEN returned FORBIDDEN in the disposable issue #15 probe. Actions Run deletion is also disabled until a dedicated target/permission contract and handler are implemented. The permission strings are documentation, not authorization. No changes to existing YAML or comment protocol are required.
+The five C-rank TOML registries under `config/` define CLI command names, execution allowlists, ordered workflow routes, deletion availability and test suites. Python 3.11 or newer is required for the standard-library `tomllib` parser. Code still binds explicitly imported implementations; TOML cannot import arbitrary modules, create workflow permissions or bypass validation. `config/deletions.toml` enables only branch deletion; issue deletion is disabled because the default GITHUB_TOKEN returned FORBIDDEN in the disposable issue #15 probe. Actions Run deletion is also disabled until a dedicated target/permission contract and handler are implemented. The permission strings are documentation, not authorization. No changes to existing YAML or comment protocol are required. The `/execute` and `/queue` request protocol and GitHub API payloads remain JSON.
 
-For JSON registry regression verification, confirm that the worker and Trigger use the same reviewed configuration commit and that the serial route is selected from `config/workflows.json`.
+For TOML registry regression verification, confirm that the worker and Trigger use the same reviewed configuration commit and that the serial route is selected from `config/workflows.toml`.
 
 ### Test registry
 
-The offline test suite uses `config/tests.json` as its ordered manifest. Each `tests/suites/` module registers a `unittest.TestCase` class with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared fixtures live in `tests/fixture.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
+The offline test suite uses `config/tests.toml` as its ordered manifest. Each `tests/suites/` module registers a `unittest.TestCase` class with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared fixtures live in `tests/fixture.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
