@@ -9,7 +9,7 @@ from github.model import WorkflowRegistry, dispatch_workflow
 from scripts.execute import EXECUTIONS, resolve_execution
 
 
-registry = WorkflowRegistry.from_json(load_registry("workflows"), EXECUTIONS)
+registry = WorkflowRegistry.from_entries(load_registry("workflows"), EXECUTIONS)
 
 
 def comment_request(event):

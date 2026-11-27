@@ -1,0 +1,14 @@
+# FileRank: C
+# Execution order is significant.
+
+[[workflows]]
+execution = ["pr_merge.py"]
+workflow = "single_run.yml"
+
+[[workflows]]
+execution = ["branch_delete.py"]
+workflow = "single_run.yml"
+
+[[workflows]]
+execution = ["pr_merge.py","branch_delete.py"]
+workflow = "serial_run.yml"

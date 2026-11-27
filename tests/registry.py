@@ -1,5 +1,5 @@
 # FileRank: C
-"""Explicit test-suite registry; never import modules named by JSON."""
+"""Explicit test-suite registry; never import modules named by configuration."""
 
 import unittest
 

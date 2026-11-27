@@ -1,0 +1,2 @@
+# FileRank: C
+tests = ["cli","execution","routing","configuration","registry"]
