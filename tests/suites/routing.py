@@ -1,7 +1,7 @@
 # FileRank: C
 """Offline routing contract tests."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 from github import trigger
 from github.model import WorkflowRegistry
@@ -132,5 +132,114 @@ class RoutingContract(TestSuite):
             with patch.object(trigger, "owner_comment", wraps=trigger.owner_comment) as parse:
                 trigger.dispatch_request(ctx.event("pr_merge.py"), REPO, REF, Mock())
                 parse.assert_called_once()
+
+        self.run_contract(check=check)
+
+    def test_rest_transport_exact_request_and_response(self):
+        cases = (("json_get", "GET", None), ("json_put", "PUT", {"sha": "a" * 40}))
+
+        def check(ctx, method, payload):
+            from github.model import github_api
+            from io import BytesIO
+            import os
+            response = MagicMock()
+            response.__enter__.return_value = BytesIO(b'{"confirmed": true}')
+            send = Mock(return_value=response)
+            with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test/",
+                                         "GH_TOKEN": "offline-fixture"}, clear=True):
+                result = github_api(method, "repos/example/work", payload, send=send)
+            self.assertEqual(result, {"confirmed": True})
+            send.assert_called_once()
+            request = send.call_args.args[0]
+            self.assertEqual(send.call_args.kwargs, {"timeout": 30})
+            self.assertEqual(request.full_url, "https://api.example.test/repos/example/work")
+            self.assertEqual(request.get_method(), method)
+            self.assertEqual(request.data, None if payload is None else b'{"sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}')
+            self.assertEqual(dict(request.header_items()), {
+                "Authorization": "Bearer offline-fixture",
+                "Accept": "application/vnd.github+json",
+                "Content-type": "application/json",
+                "X-github-api-version": "2022-11-28"})
+            response.__exit__.assert_called_once_with(None, None, None)
+
+        self.run_cases(cases, check)
+
+    def test_rest_mutations_require_explicit_status_and_exact_request(self):
+        cases = (
+            ("dispatch_200", "POST", 200, True), ("dispatch_204", "POST", 204, True),
+            ("dispatch_202", "POST", 202, False), ("dispatch_201", "POST", 201, False),
+            ("delete_204", "DELETE", 204, True), ("delete_200", "DELETE", 200, False),
+            ("delete_202", "DELETE", 202, False),
+        )
+
+        def check(ctx, method, status, allowed):
+            from github.model import dispatch_workflow, delete_resource
+            import os
+            response = MagicMock()
+            response.__enter__.return_value.status = status
+            send = Mock(return_value=response)
+            if method == "POST":
+                operation = lambda: dispatch_workflow(REPO, "single_run.yml",
+                    {"ref": "main", "inputs": {"request_id": "comment-12"}}, send=send)
+                endpoint = "/repos/example/work/actions/workflows/single_run.yml/dispatches"
+                data = b'{"ref": "main", "inputs": {"request_id": "comment-12"}}'
+            else:
+                operation = lambda: delete_resource("repos/example/work/actions/runs/12", send=send)
+                endpoint = "/repos/example/work/actions/runs/12"
+                data = None
+            with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
+                                         "GH_TOKEN": "offline-fixture"}, clear=True):
+                if allowed:
+                    self.assertIsNone(operation())
+                else:
+                    self.assert_rejected(operation)
+            send.assert_called_once()
+            request = send.call_args.args[0]
+            self.assertEqual(request.full_url, "https://api.example.test" + endpoint)
+            self.assertEqual(request.get_method(), method)
+            self.assertEqual(request.data, data)
+            self.assertEqual(send.call_args.kwargs, {"timeout": 30})
+            response.__exit__.assert_called_once()
+
+        self.run_cases(cases, check)
+
+    def test_rest_transport_does_not_retry_ambiguous_failure(self):
+        cases = (("dispatch_timeout", "dispatch"), ("delete_timeout", "delete"),
+                 ("json_timeout", "json"))
+
+        def check(ctx, operation):
+            from github.model import dispatch_workflow, delete_resource, github_api
+            import os
+            send = Mock(side_effect=TimeoutError("ambiguous response"))
+            with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
+                                         "GH_TOKEN": "offline-fixture"}, clear=True):
+                with self.assertRaisesRegex(TimeoutError, "ambiguous response"):
+                    if operation == "dispatch":
+                        dispatch_workflow(REPO, "single_run.yml", {"ref": "main"}, send=send)
+                    elif operation == "delete":
+                        delete_resource("repos/example/work/actions/runs/12", send=send)
+                    else:
+                        github_api("PUT", "repos/example/work/pulls/7/merge", {"sha": "a" * 40}, send=send)
+            send.assert_called_once()
+            self.assertEqual(send.call_args.kwargs, {"timeout": 30})
+
+        self.run_cases(cases, check)
+
+    def test_rest_json_transport_rejects_invalid_response_and_closes(self):
+        def check(ctx):
+            from github.model import github_api
+            from io import BytesIO
+            import json
+            import os
+            response = MagicMock()
+            response.__enter__.return_value = BytesIO(b"not JSON")
+            send = Mock(return_value=response)
+            with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
+                                         "GH_TOKEN": "offline-fixture"}, clear=True):
+                with self.assertRaises(json.JSONDecodeError):
+                    github_api("GET", "repos/example/work", send=send)
+            send.assert_called_once()
+            response.__exit__.assert_called_once()
+            self.assertIs(response.__exit__.call_args.args[0], json.JSONDecodeError)
 
         self.run_contract(check=check)

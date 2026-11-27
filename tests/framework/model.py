@@ -45,6 +45,12 @@ class WorkflowTestContext(TestContext):
     def patched_environment(self, **changes):
         return patch.dict(os.environ, self.environment(**changes), clear=True)
 
+    def pull_request(self, merged=False):
+        """Independent reviewed PR metadata for direct GitHub handler tests."""
+        return {"state": "closed" if merged else "open", "draft": False,
+                "merged": merged, "base": {"ref": "main", "repo": {"full_name": REPO}},
+                "head": {"sha": SHA, "ref": "feature/topic", "repo": {"full_name": REPO}}}
+
     def event(self, expression):
         return {
             "action": "created",
