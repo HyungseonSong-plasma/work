@@ -6,8 +6,8 @@ import re
 from functools import partial
 
 from config import load_names
-from libs.command import CommandPlan, CommandRegistry
-from libs.workflow import pr_plan as workflow_pr_plan
+from libs.command import CommandRegistry
+from libs.workflow import context_plan, pr_plan as workflow_pr_plan
 from libs.frame import validate_unique
 
 COMMANDS = CommandRegistry()
@@ -75,4 +75,4 @@ def actions_plan(action):
         from github.actions import ActionsContext
         return ActionsContext(args)
 
-    return CommandPlan(prepare, lambda ctx, args: ctx.validate(), action)
+    return context_plan(prepare, action)
