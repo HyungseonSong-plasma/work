@@ -4,7 +4,7 @@
 from contextlib import contextmanager
 import sys
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from app.framework.model import Context, PRContext
@@ -231,5 +231,73 @@ class ExecutionContract(TestSuite):
                     else:
                         serial.assert_called_once_with(("pr_merge.py", "branch_delete.py"), stage)
                         run.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_merge_domain_exact_review_and_guarded_put(self):
+        def check(ctx):
+            from github.merge import merge_pr
+            root = "repos/example/work"
+            endpoint = root + "/pulls/7"
+            api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(),
+                                    {"merged": True, "sha": "b" * 40}])
+            self.assertEqual(merge_pr(api, REPO, REF, 7, SHA), "b" * 40)
+            self.assertEqual(api.call_args_list, [
+                call("GET", root), call("GET", endpoint),
+                call("PUT", endpoint + "/merge", {"sha": SHA, "merge_method": "merge"})])
+
+        self.run_contract(check=check)
+
+    def test_merge_domain_invalid_inputs_stop_before_remote_review(self):
+        cases = (("boolean_pr", True, SHA), ("zero_pr", 0, SHA),
+                 ("leading_zero", "07", SHA), ("short_sha", 7, "a" * 39),
+                 ("uppercase_sha", 7, "A" * 40))
+        # Each row supplies exactly the same independent reviewed input contract.
+        def check(ctx, number, sha):
+            from github.merge import merge_pr
+            api = Mock()
+            self.assert_rejected(merge_pr, api, REPO, REF, number, sha)
+            api.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_merge_domain_rejects_unreviewed_pr(self):
+        cases = (
+            ("wrong_ref", "refs/heads/other", {}),
+            ("closed", REF, {"state": "closed"}),
+            ("draft", REF, {"draft": True}),
+            ("merged", REF, {"merged": True}),
+            ("wrong_base", REF, {"base": {"ref": "other", "repo": {"full_name": REPO}}}),
+            ("wrong_repository", REF, {"base": {"ref": "main", "repo": {"full_name": "other/work"}}}),
+            ("wrong_sha", REF, {"head": {"sha": "b" * 40}}),
+        )
+
+        def check(ctx, ref, changes):
+            from github.merge import merge_pr
+            pr = ctx.pull_request()
+            pr.update(changes)
+            api = Mock(side_effect=[{"default_branch": "main"}, pr])
+            self.assert_rejected(merge_pr, api, REPO, ref, "7", SHA)
+            expected = [call("GET", "repos/example/work")]
+            if ref == REF:
+                expected.append(call("GET", "repos/example/work/pulls/7"))
+            self.assertEqual(api.call_args_list, expected)
+
+        self.run_cases(cases, check)
+
+    def test_merge_domain_requires_confirmed_result(self):
+        cases = (("not_merged", {"merged": False, "sha": SHA}),
+                 ("missing_confirmation", {"sha": SHA}),
+                 ("invalid_sha", {"merged": True, "sha": "bad"}),
+                 ("missing_sha", {"merged": True}))
+
+        def check(ctx, response):
+            from github.merge import merge_pr
+            root = "repos/example/work"
+            api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(), response])
+            self.assert_rejected(merge_pr, api, REPO, REF, "7", SHA)
+            self.assertEqual(api.call_args_list, [
+                call("GET", root), call("GET", root + "/pulls/7"),
+                call("PUT", root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"})])
 
         self.run_cases(cases, check)

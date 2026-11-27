@@ -3,7 +3,7 @@
 
 from copy import deepcopy
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from app.framework.model import ActionsContext
 from types import SimpleNamespace
@@ -372,3 +372,225 @@ class DeletionContract(TestSuite):
                     current_run_id=13, targets=[target], report=validated.report)
 
         self.run_contract(check=check)
+
+    def test_branch_domain_rejects_unreviewed_pr(self):
+        cases = (
+            ("wrong_ref", "refs/heads/other", {}),
+            ("open", REF, {"state": "open"}),
+            ("not_merged", REF, {"merged": False}),
+            ("wrong_base", REF, {"base": {"ref": "other", "repo": {"full_name": REPO}}}),
+            ("wrong_repo", REF, {"base": {"ref": "main", "repo": {"full_name": "other/work"}}}),
+            ("wrong_sha", REF, {"head": {"sha": "b" * 40}}),
+        )
+
+        def check(ctx, ref, changes):
+            pr = ctx.pull_request(merged=True)
+            pr.update(changes)
+            api = Mock(side_effect=[{"default_branch": "main"}, pr])
+            git = Mock()
+            self.assert_rejected(deletion.delete_branch, api, git, REPO, ref, "7", SHA, "remote")
+            expected = [call("GET", "repos/example/work")]
+            if ref == REF:
+                expected.append(call("GET", "repos/example/work/pulls/7"))
+            self.assertEqual(api.call_args_list, expected)
+            git.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_branch_domain_skips_unsafe_heads(self):
+        cases = (
+            ("fork", "feature/topic", {"full_name": "other/work"}, "Skip: fork or missing head repository."),
+            ("missing", "feature/topic", None, "Skip: fork or missing head repository."),
+            ("main", "main", {"full_name": REPO}, "Skip: default or reserved branch."),
+            ("master", "master", {"full_name": REPO}, "Skip: default or reserved branch."),
+            ("custom_default", "stable", {"full_name": REPO}, "Skip: default or reserved branch."),
+        )
+
+        def check(ctx, branch, head_repo, expected):
+            default = "stable" if branch == "stable" else "main"
+            pr = ctx.pull_request(merged=True)
+            pr["base"]["ref"] = default
+            pr["head"].update(ref=branch, repo=head_repo)
+            api = Mock(side_effect=[{"default_branch": default}, pr])
+            git = Mock()
+            self.assertEqual(deletion.delete_branch(api, git, REPO, f"refs/heads/{default}",
+                                                    "7", SHA, "remote"), expected)
+            self.assertEqual(api.call_args_list, [call("GET", "repos/example/work"),
+                                                 call("GET", "repos/example/work/pulls/7")])
+            git.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_branch_domain_skips_absent_changed_or_protected(self):
+        cases = (
+            ("absent", 2, "", None, "Skip: branch already absent."),
+            ("changed_git", 0, "changed", None, "Skip: branch head has changed."),
+            ("protected", 0, None, {"protected": True, "commit": {"sha": SHA}},
+             "Skip: protected branch or changed head."),
+            ("changed_api", 0, None, {"protected": False, "commit": {"sha": "b" * 40}},
+             "Skip: protected branch or changed head."),
+        )
+
+        def check(ctx, status, output, details, expected):
+            ref = "refs/heads/feature/topic"
+            api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(merged=True), details])
+            git = Mock(side_effect=[None, SimpleNamespace(returncode=status,
+                stdout=f"{SHA}\t{ref}\n" if output is None else output)])
+            self.assertEqual(deletion.delete_branch(api, git, REPO, REF, "7", SHA, "remote"), expected)
+            calls = [call("GET", "repos/example/work"), call("GET", "repos/example/work/pulls/7")]
+            if details is not None:
+                calls.append(call("GET", "repos/example/work/branches/feature%2Ftopic"))
+            self.assertEqual(api.call_args_list, calls)
+            self.assertEqual(git.call_args_list, [
+                call("check-ref-format", ref),
+                call("ls-remote", "--exit-code", "--refs", "remote", ref, allowed=(0, 2))])
+
+        self.run_cases(cases, check)
+
+    def test_branch_domain_scans_all_pages_before_exact_lease(self):
+        cases = (("clear", None, None), ("head_in_use", "head", {"full_name": REPO}),
+                 ("base_in_use", "base", {"full_name": REPO}),
+                 ("unknown_repository", "head", None),
+                 ("fork_reference", "head", {"full_name": "other/work"}),
+                 ("invalid_page", "invalid", None))
+
+        def check(ctx, side, repository):
+            root = "repos/example/work"
+            ref = "refs/heads/feature/topic"
+            unrelated = {"head": {"ref": "unrelated", "repo": {"full_name": REPO}},
+                         "base": {"ref": "main", "repo": {"full_name": REPO}}}
+            other = deepcopy(unrelated)
+            if side in ("head", "base"):
+                other[side] = {"ref": "feature/topic", "repo": repository}
+            page = {} if side == "invalid" else [other]
+            api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(merged=True),
+                       {"protected": False, "commit": {"sha": SHA}}, [unrelated] * 100, page])
+            git = Mock(side_effect=[None, SimpleNamespace(returncode=0, stdout=f"{SHA}\t{ref}\n"), None])
+            args = (api, git, REPO, REF, "7", SHA, "remote")
+            if side == "invalid":
+                self.assert_rejected(deletion.delete_branch, *args)
+            else:
+                expected = ("Deleted merged PR head: feature/topic" if side is None or repository == {"full_name": "other/work"}
+                            else "Skip: branch is used by an open PR.")
+                self.assertEqual(deletion.delete_branch(*args), expected)
+            self.assertEqual(api.call_args_list, [
+                call("GET", root), call("GET", root + "/pulls/7"),
+                call("GET", root + "/branches/feature%2Ftopic"),
+                call("GET", root + "/pulls?state=open&per_page=100&page=1"),
+                call("GET", root + "/pulls?state=open&per_page=100&page=2")])
+            calls = [call("check-ref-format", ref),
+                     call("ls-remote", "--exit-code", "--refs", "remote", ref, allowed=(0, 2))]
+            if side is None or repository == {"full_name": "other/work"}:
+                calls.append(call("push", f"--force-with-lease={ref}:{SHA}", "remote", f":{ref}"))
+            self.assertEqual(git.call_args_list, calls)
+
+        self.run_cases(cases, check)
+
+    def test_branch_git_session_is_scoped_and_cleans_up(self):
+        cases = (("success", 0), ("failure", 1))
+
+        def check(ctx, status):
+            from pathlib import Path
+            import os
+            observed = []
+
+            def branch(api, git, repository, run_ref, number, sha, remote):
+                directory = Path(run.call_args.args[0][-1])
+                self.assertTrue(directory.is_dir())
+                observed.append(directory)
+                git("check-ref-format", "refs/heads/feature/topic")
+                return "Done"
+
+            with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
+                    patch.object(deletion.subprocess, "run",
+                                 side_effect=[None, SimpleNamespace(returncode=status)]) as run:
+                args = (ctx.api, REPO, REF, "7", SHA, "remote")
+                if status:
+                    with self.assertRaisesRegex(ValueError, "Git check-ref-format failed"):
+                        deletion.delete_branch_with_git(*args)
+                else:
+                    self.assertEqual(deletion.delete_branch_with_git(*args), "Done")
+                directory = str(observed[0])
+                self.assertEqual(run.call_args_list, [
+                    call(["git", "init", "-q", directory], check=True),
+                    call(["git", "-C", directory, "-c", "credential.helper=",
+                          "-c", "credential.helper=!gh auth git-credential",
+                          "check-ref-format", "refs/heads/feature/topic"],
+                         env=dict(os.environ, GIT_TERMINAL_PROMPT="0"),
+                         capture_output=True, text=True, timeout=60)])
+                handler.assert_called_once()
+                self.assertEqual(handler.call_args.args[0], ctx.api)
+                self.assertEqual(handler.call_args.args[2:], args[1:])
+            self.assertFalse(observed[0].exists())
+            ctx.api.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_batch_domain_partial_failure_preserves_completed_reports(self):
+        cases = (("metadata_changed", "metadata"), ("delete_failure", "delete"),
+                 ("report_failure", "report"))
+
+        def check(ctx, failure):
+            first, second, third = (dict(ctx.run_data, id=i) for i in (12, 14, 15))
+            fresh_second = dict(second, extra="changed") if failure == "metadata" else second
+            ctx.api.side_effect = [ctx.repo, first, second, third, first, fresh_second]
+            trace = Mock()
+            report = Mock()
+            trace.attach_mock(ctx.api, "api")
+            trace.attach_mock(ctx.remove, "remove")
+            trace.attach_mock(report, "report")
+            if failure == "delete":
+                ctx.remove.side_effect = [None, ValueError("delete failed")]
+            if failure == "report":
+                report.side_effect = ValueError("report failed")
+            targets = [ctx.target(i) for i in (12, 14, 15)]
+            with self.assertRaises(ValueError):
+                deletion.delete_actions_batch(targets=targets, report=report, **ctx.batch_parameters)
+            root = "repos/example/work"
+            endpoint = root + "/actions/runs/"
+            expected = [call.api("GET", root),
+                        call.api("GET", endpoint + "12"), call.api("GET", endpoint + "14"),
+                        call.api("GET", endpoint + "15"), call.api("GET", endpoint + "12"),
+                        call.remove(endpoint + "12"), call.report("Deleted Actions run: 12")]
+            if failure != "report":
+                expected.append(call.api("GET", endpoint + "14"))
+            if failure == "delete":
+                expected.append(call.remove(endpoint + "14"))
+            self.assertEqual(trace.mock_calls, expected)
+
+        self.run_cases(cases, check)
+
+    def test_actions_retention_rejects_inconsistent_listing(self):
+        cases = (("wrong_count", "count"), ("wrong_order", "order"), ("duplicate", "duplicate"),
+                 ("wrong_repository", "repository"), ("wrong_workflow", "workflow"),
+                 ("wrong_path", "path"), ("not_success", "conclusion"), ("empty_success", "empty"))
+
+        def check(ctx, defect):
+            run = dict(ctx.run_data, path=".github/workflows/trigger.yml", workflow_id=7,
+                       conclusion="success", created_at="2026-11-27T10:00:00Z")
+            newer = dict(run, id=20, created_at="2026-11-27T11:00:00Z")
+            listing = [newer, run]
+            if defect == "order":
+                listing.reverse()
+            elif defect == "duplicate":
+                listing = [newer, newer]
+            elif defect == "repository":
+                listing[0] = dict(newer, repository={"id": 2, "full_name": REPO})
+            elif defect == "workflow":
+                listing[0] = dict(newer, workflow_id=8)
+            elif defect == "path":
+                listing[0] = dict(newer, path=".github/workflows/other.yml")
+            elif defect == "conclusion":
+                listing[0] = dict(newer, conclusion="failure")
+            elif defect == "empty":
+                listing = []
+            total = 1 if defect == "count" else len(listing)
+            ctx.api.side_effect = [ctx.repo, run, {"total_count": total, "workflow_runs": listing}]
+            self.assert_rejected(deletion.delete_actions_run, **ctx.parameters)
+            self.assertEqual(ctx.api.call_args_list, [
+                call("GET", "repos/example/work"),
+                call("GET", "repos/example/work/actions/runs/12"),
+                call("GET", "repos/example/work/actions/workflows/7/runs?status=success&per_page=100")])
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
