@@ -61,3 +61,5 @@ For an end-to-end CLI regression check, use a reviewed documentation-only PR and
 ### Adding workflow routes
 
 Register exact ordered script tuples in `github/trigger.py` using `registry.register(chain, workflow_filename)`. Single-script routes are registered from the existing execution allowlist; serial chains are explicitly registered. `route()` uses the same registry lookup for all chains. Unknown and duplicate routes are rejected. Registration does not create a workflow or grant permission to run new scripts: the corresponding YAML, worker validation, task allowlist and execution contract must also support the route. CLI command registration remains separate.
+
+When verifying a workflow route change, confirm the Trigger and worker runs both use the post-change default-branch commit. A successful merge of the change itself exercises the previous implementation and is not sufficient evidence for the new route registry.
