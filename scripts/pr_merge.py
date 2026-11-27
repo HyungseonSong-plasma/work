@@ -7,26 +7,7 @@ import re
 import sys
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
-
-
-def github_api(method, endpoint, payload=None):
-    """Call the GitHub REST API using the workflow's scoped token."""
-    url = os.environ["GITHUB_API_URL"].rstrip("/") + "/" + endpoint
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    request = Request(
-        url,
-        data=data,
-        method=method,
-        headers={
-            "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    with urlopen(request, timeout=30) as response:
-        return json.load(response)
+from github.model import github_api
 
 
 def merge_pr(api, repository, ref, pr_number, expected_head_sha):
