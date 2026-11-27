@@ -1,0 +1,76 @@
+# FileRank: C
+name: D5 exact-snapshot distribution QA
+on:
+  push:
+    branches: [test/d5-distribution-qa]
+    paths: ['.github/workflows/d5_distribution_qa.yml']
+permissions: {}
+jobs:
+  qa:
+    if: ${{ github.repository_id == '1473784826' && github.actor_id == '189476866' && github.run_attempt == '1' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, python: '3.11'}
+          - {os: ubuntu-latest, python: '3.12'}
+          - {os: ubuntu-latest, python: '3.13'}
+          - {os: ubuntu-latest, python: '3.14'}
+          - {os: macos-latest, python: '3.13'}
+          - {os: windows-latest, python: '3.13'}
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 85da5072053d1765bcdc2c0888fce1e4ccb79d3b
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: e1d08eb6f3c96817441cc4fb00848b39af6ce704
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact snapshots and comparator self-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "85da5072053d1765bcdc2c0888fce1e4ccb79d3b"
+          test "$(git -C candidate rev-parse HEAD)" = "e1d08eb6f3c96817441cc4fb00848b39af6ce704"
+          for path in src .github/workflows pyproject.toml MANIFEST.in; do
+            test "$(git -C baseline rev-parse HEAD:$path)" = "$(git -C candidate rev-parse HEAD:$path)"
+          done
+          cd candidate
+          python -B -m unittest -v tests.verification.test_compare
+      - name: Strict same-layout Q6 comparison (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd candidate
+          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha 85da5072053d1765bcdc2c0888fce1e4ccb79d3b --candidate . --candidate-sha e1d08eb6f3c96817441cc4fb00848b39af6ce704
+      - name: Isolated distribution integrity and install QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd candidate
+          python - <<'PY'
+          import os, subprocess, sys, tempfile
+          from pathlib import Path
+          python = sys.executable
+          def pip(*args):
+              subprocess.run([python, "-m", "pip", *args], check=True)
+          pip("install", "build==1.3.0")
+          with tempfile.TemporaryDirectory(prefix="reviewed-backend-") as tmp:
+              pip("download", "--no-deps", "--only-binary=:all:", "setuptools==82.0.1", "-d", tmp)
+              for p in Path(tmp).iterdir():
+                  import hashlib
+                  print("Backend:", p.name, hashlib.sha256(p.read_bytes()).hexdigest(), flush=True)
+              env = dict(os.environ, PIP_NO_INDEX="1", PIP_FIND_LINKS=tmp)
+              subprocess.run([python, "-B", "tests/verification/packaging_probe.py"], env=env, check=True)
+          PY
