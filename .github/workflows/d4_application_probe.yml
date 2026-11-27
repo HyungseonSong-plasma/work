@@ -1,0 +1,69 @@
+# FileRank: C
+name: D4 exact-snapshot application verification
+on:
+  push:
+    branches: [test/d4-application-verification]
+    paths: ['.github/workflows/d4_application_probe.yml']
+permissions: {}
+jobs:
+  regression:
+    if: ${{ github.repository_id == '1473784826' && github.actor_id == '189476866' && github.run_attempt == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ab3a6b87cb9af7cdd816d17ad50065447e9b2d82
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: f9e0f2d290d8cd07af32cd64d7432e441dad1509
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact source migration and Q6 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "ab3a6b87cb9af7cdd816d17ad50065447e9b2d82"
+          test "$(git -C candidate rev-parse HEAD)" = "f9e0f2d290d8cd07af32cd64d7432e441dad1509"
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          old, new = Path("baseline"), Path("candidate")
+          def files(root):
+              return {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+          assert files(old / "work" / "libs") == files(new / "src" / "work" / "libs")
+          assert files(old / "config") == files(new / "src" / "work" / "config")
+          for path, original in files(old / "github").items():
+              migrated = (new / "src" / "work" / "github" / path).read_bytes()
+              assert original == re.sub(rb'\b(from|import) work\.(app|github|config)(?=[.\s])', rb'\1 \2', migrated), path
+          for path, original in files(old / ".github" / "workflows").items():
+              migrated = (new / ".github" / "workflows" / path).read_bytes()
+              migrated = re.sub(rb'(?m)^ +PYTHONPATH: .*\n', b'', migrated).replace(b'python3 -P -m work', b'python3 -m app')
+              assert original == migrated, path
+          print("Library/config bytes identical; domain import-only changes; YAML bootstrap-only changes.")
+          PY
+          cd candidate
+          python -B -m unittest -v tests.verification.test_compare
+          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha ab3a6b87cb9af7cdd816d17ad50065447e9b2d82 --candidate . --candidate-sha f9e0f2d290d8cd07af32cd64d7432e441dad1509
+          PYTHONPATH="$PWD/src" python -P -m work --help
+      - name: Build and install full application in independent environments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install build==1.3.0
+          mkdir "$RUNNER_TEMP/build-wheelhouse"
+          python -m pip download --no-deps --only-binary=:all: setuptools==82.0.1 -d "$RUNNER_TEMP/build-wheelhouse"
+          export PIP_NO_INDEX=1 PIP_FIND_LINKS="$RUNNER_TEMP/build-wheelhouse"
+          cd candidate
+          python -B tests/verification/packaging_probe.py
