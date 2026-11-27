@@ -6,7 +6,7 @@ import json
 from github.actions import actions_request
 from libs.github import CLIENT
 from libs.github import (validate_sha, validate_pr_number, require_default_ref,
-                                    parse_execute_comment)
+                                    parse_execute_comment, is_unchanged_comment)
 
 
 def owner_comment(event):
@@ -62,7 +62,7 @@ def route_actions(event, default, request_id, request):
     if type(number) is not int:
         raise ValueError("Invalid source PR number.")
     validate_pr_number(number)
-    if event["comment"]["created_at"] != event["comment"]["updated_at"]:
+    if not is_unchanged_comment(event["comment"]):
         raise ValueError("Edited approval is not accepted.")
     return "actions_delete.yml", {
         "ref": default,

@@ -6,8 +6,12 @@ import re
 
 from config import require_deletion, load_registry
 from libs.github import (CLIENT, validate_sha, review_repository,
-                         require_default_ref, parse_execute_comment, validate_pr_number)
+                         require_default_ref, parse_execute_comment, validate_pr_number,
+                         is_unchanged_comment)
 from libs.workflow import Context
+
+
+_TARGET_FIELDS = ("run_id", "expected_head_sha", "expected_run_attempt")
 
 
 def actions_request(request):
@@ -17,12 +21,9 @@ def actions_request(request):
     if set(request) == {"execution", "runs"}:
         targets = validate_actions_targets(request["runs"])
         return {"runs": json.dumps(targets, sort_keys=True, separators=(",", ":"))}
-    if set(request) != {
-        "execution", "run_id", "expected_head_sha", "expected_run_attempt"
-    }:
+    if set(request) != {"execution", *_TARGET_FIELDS}:
         raise ValueError("Invalid Actions deletion request.")
-    target = {key: request[key] for key in
-              ("run_id", "expected_head_sha", "expected_run_attempt")}
+    target = {key: request[key] for key in _TARGET_FIELDS}
     validate_actions_targets([target])
     return {key: str(value) for key, value in target.items()}
 
@@ -56,9 +57,7 @@ def validate_actions_targets(targets, policy=None):
         raise ValueError("Invalid Actions batch size.")
     ids = set()
     for target in targets:
-        if not isinstance(target, dict) or set(target) != {
-            "run_id", "expected_head_sha", "expected_run_attempt"
-        }:
+        if not isinstance(target, dict) or set(target) != set(_TARGET_FIELDS):
             raise ValueError("Invalid Actions target.")
         if any(type(target[key]) is not int or target[key] <= 0
                for key in ("run_id", "expected_run_attempt")):
@@ -178,13 +177,12 @@ class ActionsContext(Context):
         args = self.args
         if args.runs:
             if any(value is not None for value in
-                   (args.run_id, args.expected_head_sha, args.expected_run_attempt)):
+                   tuple(getattr(args, key) for key in _TARGET_FIELDS)):
                 raise ValueError("Choose single or batch, not both.")
             request = {"execution": "delete actions", "runs": json.loads(args.runs)}
         else:
-            request = {"execution": "delete actions", "run_id": args.run_id,
-                       "expected_head_sha": args.expected_head_sha,
-                       "expected_run_attempt": args.expected_run_attempt}
+            request = dict(execution="delete actions",
+                           **{key: getattr(args, key) for key in _TARGET_FIELDS})
         # Preserve the approved wire format during comparison, normalize afterwards.
         inputs = actions_request(request)
         self._validate_approval(self.read_event(), inputs)
@@ -232,7 +230,7 @@ class ActionsContext(Context):
             comment["id"] == comment_id
             and comment["user"]["id"] == repo["owner"]["id"]
             and comment["author_association"] == "OWNER"
-            and comment["created_at"] == comment["updated_at"]
+            and is_unchanged_comment(comment)
             and comment["issue_url"] == f"{api_url}/{root}/issues/{source_pr}"
             and pr["number"] == int(source_pr)
             and pr["base"]["repo"]["full_name"] == repository

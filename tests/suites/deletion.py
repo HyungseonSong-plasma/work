@@ -194,6 +194,35 @@ class DeletionContract(TestSuite):
 
         self.run_cases(cases, check)
 
+    def test_actions_target_wire_schema_is_exact(self):
+        cases = (("single", "single"), ("batch", "batch"),
+                 ("missing", "missing"), ("extra", "extra"), ("bool", "bool"))
+
+        def check(ctx, mode):
+            target = {"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1}
+            if mode == "batch":
+                targets = [dict(target, run_id=14), target]
+                wire = actions.actions_request({"execution": "delete actions", "runs": targets})
+                self.assertEqual(wire, {"runs": json.dumps(targets, sort_keys=True,
+                                                          separators=(",", ":"))})
+                self.assertEqual(json.loads(wire["runs"]), targets)
+            elif mode == "single":
+                self.assertEqual(actions.actions_request(dict(target, execution="delete actions")),
+                                 {"run_id": "12", "expected_head_sha": SHA,
+                                  "expected_run_attempt": "1"})
+            else:
+                if mode == "missing":
+                    target.pop("expected_run_attempt")
+                elif mode == "extra":
+                    target["unexpected"] = 1
+                else:
+                    target["run_id"] = True
+                self.assert_rejected(actions.actions_request, dict(target, execution="delete actions"))
+                self.assert_rejected(actions.actions_request,
+                                     {"execution": "delete actions", "runs": [target]})
+
+        self.run_cases(cases, check)
+
     def test_batch_comment_dispatches_once(self):
         def check(ctx):
             targets = [ctx.target(),

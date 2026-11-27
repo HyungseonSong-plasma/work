@@ -7,15 +7,14 @@ from pathlib import Path
 
 from app.wiring import register, resolve_execution, workflow_commands
 from libs.command import Command
-from libs.workflow import workflow_plan
+from libs.workflow import workflow_plan, require_execution_membership
 
 
 def run_execution(executions, run=subprocess.run):
     """Run in input order; never start a later command after failure."""
     routes = workflow_commands()
     executions = tuple(executions)
-    if not executions or any(name not in routes for name in executions):
-        raise ValueError("Unknown execution binding.")
+    require_execution_membership(executions, routes, unknown="Unknown execution binding.")
     for name in executions:
         print(f"Executing {name}", flush=True)
         result = run(

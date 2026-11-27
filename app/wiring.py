@@ -7,7 +7,8 @@ from functools import partial
 
 from config import load_names
 from libs.command import CommandRegistry
-from libs.workflow import context_plan, pr_plan as workflow_pr_plan
+from libs.workflow import (context_plan, pr_plan as workflow_pr_plan,
+                           require_execution_membership)
 from libs.frame import validate_unique
 
 COMMANDS = CommandRegistry()
@@ -56,8 +57,8 @@ def resolve_execution(expression, parameters):
         raise ValueError("Expected an execution string.")
     names = tuple(name.strip() for name in expression.split(" - "))
     routes = workflow_commands()
-    if any(name not in routes for name in names):
-        raise ValueError("Every execution must be a registered command.")
+    require_execution_membership(names, routes,
+                                 unknown="Every execution must be a registered command.")
     validate_unique(names, "Duplicate execution is not allowed.")
     if {"pr_merge.py", "branch_delete.py"}.issubset(names):
         if names.index("pr_merge.py") > names.index("branch_delete.py"):

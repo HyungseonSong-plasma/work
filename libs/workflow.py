@@ -9,6 +9,12 @@ from libs.command import CommandPlan
 from libs.github import parse_pr_parameters
 
 
+def require_execution_membership(executions, routes, *, unknown):
+    """Require a nonempty registered chain before dispatch or subprocess execution."""
+    if not executions or any(name not in routes for name in executions):
+        raise ValueError(unknown)
+
+
 def _identity(ctx, args):
     return ctx
 
