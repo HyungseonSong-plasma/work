@@ -40,6 +40,7 @@ jobs:
           persist-credentials: false
       - name: Execute first registered script
         env:
+          PYTHONPATH: ${{ github.workspace }}
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
           EXECUTION_INPUTS: ${{ inputs.parameters }}
@@ -62,6 +63,7 @@ jobs:
           persist-credentials: false
       - name: Execute second registered script
         env:
+          PYTHONPATH: ${{ github.workspace }}
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
           EXECUTION_INPUTS: ${{ inputs.parameters }}
