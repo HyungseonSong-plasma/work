@@ -8,8 +8,8 @@ import re
 from pathlib import Path
 
 from libs.frame import validate_callback, validate_overrides, validate_unique
-from github.framework.transport import github_api
-from github.framework.model import require_default_ref, parse_execute_comment, validate_pr_number
+from libs.github import github_api
+from libs.github import require_default_ref, parse_execute_comment, validate_pr_number
 
 
 @dataclass(frozen=True)
@@ -171,7 +171,7 @@ class PRContext(Context):
         self.execution_id = execution
 
     def validate(self):
-        from github.framework.model import parse_pr_parameters
+        from libs.github import parse_pr_parameters
         from app.framework.registry import resolve_execution
 
         self.require_event("workflow_dispatch", fresh=True)

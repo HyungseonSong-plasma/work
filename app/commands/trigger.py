@@ -7,7 +7,7 @@ from config import load_registry
 from app.framework.registry import register, execution_ids, resolve_execution
 from app.framework.model import Command, workflow_plan
 from github import trigger
-from github.framework.registry import WorkflowRegistry
+from libs.github import WorkflowRegistry
 
 
 # Trusted composition root: preserve eager route validation on CLI module loading.

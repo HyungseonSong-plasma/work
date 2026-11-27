@@ -1,7 +1,7 @@
 # FileRank: C
 """Merge a single, explicitly selected GitHub pull request."""
 
-from github.framework.model import validate_pr_number, validate_sha, review_repository, matches_pr_head
+from libs.github import validate_pr_number, validate_sha, review_repository, matches_pr_head
 
 
 def merge_pr(api, repository, ref, pr_number, expected_head_sha):

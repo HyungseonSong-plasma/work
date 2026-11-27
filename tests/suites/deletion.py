@@ -8,7 +8,7 @@ from unittest.mock import Mock, call, patch
 from app.framework.model import ActionsContext
 from types import SimpleNamespace
 from github import actions, delete as deletion
-from github.framework.transport import delete_resource
+from libs.github import delete_resource
 from tests.framework.registry import register
 from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
@@ -229,7 +229,7 @@ class DeletionContract(TestSuite):
             send = MagicMock()
             send.return_value.__enter__.return_value = response
             endpoint = "repos/example/work/actions/runs/12"
-            with patch("github.framework.transport._request") as request:
+            with patch("libs.github._request") as request:
                 if allowed:
                     delete_resource(endpoint, send=send)
                     request.assert_called_once_with("DELETE", endpoint)
@@ -507,7 +507,7 @@ class DeletionContract(TestSuite):
                 return "Done"
 
             with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
-                    patch("github.framework.transport.subprocess.run",
+                    patch("libs.github.subprocess.run",
                                  side_effect=[None, SimpleNamespace(returncode=status)]) as run:
                 args = (ctx.api, REPO, REF, "7", SHA, "remote")
                 if status:

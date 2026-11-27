@@ -4,8 +4,8 @@
 import json
 
 from github.actions import actions_request
-from github.framework.transport import dispatch_workflow
-from github.framework.model import (validate_sha, validate_pr_number, require_default_ref,
+from libs.github import dispatch_workflow
+from libs.github import (validate_sha, validate_pr_number, require_default_ref,
                                     parse_execute_comment)
 
 

@@ -5,8 +5,8 @@ from urllib.parse import quote
 
 from config import require_deletion
 from github.actions import delete_actions_batch, delete_actions_run
-from github.framework.model import review_repository, matches_pr_head
-from github.framework.transport import git_session
+from libs.github import review_repository, matches_pr_head
+from libs.github import git_session
 
 
 

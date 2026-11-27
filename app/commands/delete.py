@@ -4,7 +4,7 @@
 from app.framework.model import Command, pr_plan, actions_plan
 from app.framework.registry import register
 from github.delete import delete
-from github.framework.transport import github_api, delete_resource
+from libs.github import github_api, delete_resource
 
 
 def check_branch_inputs(args):

@@ -3,7 +3,7 @@
 
 from app.framework.model import Command, pr_plan
 from app.framework.registry import register
-from github.framework.transport import github_api
+from libs.github import github_api
 from github import merge
 
 
