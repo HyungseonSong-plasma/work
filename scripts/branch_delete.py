@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from urllib.parse import quote
 
+from config import require_deletion
+
 
 def parse_parameters(raw):
     parameters = json.loads(raw)
@@ -28,6 +30,7 @@ def parse_parameters(raw):
 
 def delete_branch(api, git, repository, run_ref, number, sha, remote):
     """Derive the deletion target from GitHub, not from user-supplied refs."""
+    require_deletion("branch")
     root = f"repos/{repository}"
     default = api("GET", root)["default_branch"]
     if run_ref != f"refs/heads/{default}":

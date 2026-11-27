@@ -1,6 +1,8 @@
 # FileRank: C
 """Explicit registration for trusted CLI commands."""
 
+from config import load_names
+
 COMMANDS = {}
 
 
@@ -19,3 +21,11 @@ def register(name):
         COMMANDS[name] = command
         return command
     return decorator
+
+
+def configured_commands():
+    """Select only explicitly registered implementations named in JSON."""
+    names = load_names("commands")
+    if any(name not in COMMANDS for name in names):
+        raise ValueError("Unknown configured command.")
+    return {name: COMMANDS[name] for name in names}

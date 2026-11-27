@@ -7,13 +7,13 @@ from urllib.error import HTTPError, URLError
 from subprocess import SubprocessError
 
 from app import commands  # Load the explicitly registered command modules.
-from app.registry import COMMANDS
+from app.registry import configured_commands
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python3 -m app")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name, command in COMMANDS.items():
+    for name, command in configured_commands().items():
         subparser = subparsers.add_parser(name, help=command.help)
         command.configure(subparser)
         subparser.set_defaults(handler=command.execute)

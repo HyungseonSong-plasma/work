@@ -1,0 +1,14 @@
+{
+    "branch": {
+        "enabled": true,
+        "permission": "contents: write"
+    },
+    "actions": {
+        "enabled": false,
+        "permission": "actions: write"
+    },
+    "issue": {
+        "enabled": false,
+        "permission": "owner authorization"
+    }
+}

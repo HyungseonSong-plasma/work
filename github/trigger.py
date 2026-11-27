@@ -4,14 +4,12 @@
 import json
 import re
 
+from config import load_registry
 from github.model import WorkflowRegistry, dispatch_workflow
 from scripts.execute import EXECUTIONS, resolve_execution
 
 
-registry = WorkflowRegistry()
-for script in sorted(EXECUTIONS):
-    registry.register((script,), "single_run.yml")
-registry.register(("pr_merge.py", "branch_delete.py"), "serial_run.yml")
+registry = WorkflowRegistry.from_json(load_registry("workflows"), EXECUTIONS)
 
 
 def comment_request(event):
