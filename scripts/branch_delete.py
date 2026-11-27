@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 
-from pr_merge import github_api
+from github.model import github_api
 
 
 def parse_parameters(raw):
