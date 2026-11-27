@@ -2,6 +2,7 @@
 """GitHub framework: wire contracts, explicit workflow routing and transport."""
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 import json
 import os
 import re
@@ -191,5 +192,24 @@ def git_session():
         yield git
 
 
-# Domain-owned lifecycle; concrete operations bind the named stages.
-GUARDED_MUTATION = FrameContract(("prepare", "review", "validate", "mutate", "confirm"))
+# A JSON mutation must be prepared before it can run and confirmed afterwards.
+_GUARDED_JSON_MUTATION = FrameContract(("prepare", "mutate", "confirm"))
+
+
+@dataclass(frozen=True)
+class JsonMutation:
+    api: object
+    method: str
+    endpoint: str
+    payload: dict
+
+    def execute(self):
+        if type(self) is not JsonMutation or self.method not in ("POST", "PUT", "PATCH"):
+            raise TypeError("Expected a prepared JSON mutation.")
+        return self.api(self.method, self.endpoint, self.payload)
+
+
+def guarded_json_mutation(prepare, confirm):
+    """Bind domain checks around the fixed JSON mutation executor."""
+    return _GUARDED_JSON_MUTATION.bind(prepare=prepare, mutate=JsonMutation.execute,
+                                      confirm=confirm)

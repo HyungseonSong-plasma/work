@@ -303,3 +303,80 @@ class ExecutionContract(TestSuite):
                 call("PUT", root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"})])
 
         self.run_cases(cases, check)
+
+    def test_guarded_json_mutation_rejects_invalid_prepared_request(self):
+        cases = (("foreign_object", None), ("read_method", "GET"),
+                 ("delete_method", "DELETE"), ("unknown_method", "INVALID"))
+
+        def check(ctx, method):
+            from libs.github import JsonMutation, guarded_json_mutation
+            api, confirm = Mock(), Mock()
+            foreign = Mock()
+            prepared = (foreign if method is None else
+                        JsonMutation(api, method, "repos/example/work", {}))
+            prepare = Mock(return_value=prepared)
+            frame = guarded_json_mutation(prepare, confirm)
+            with self.assertRaisesRegex(TypeError, "Expected a prepared JSON mutation"):
+                frame.execute(ctx)
+            prepare.assert_called_once_with(ctx)
+            api.assert_not_called()
+            foreign.execute.assert_not_called()
+            confirm.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_guarded_json_mutation_fixed_executor_and_failure(self):
+        cases = (("success", None), ("prepare_failure", "prepare"),
+                 ("api_failure", "mutate"), ("confirm_failure", "confirm"))
+
+        def check(ctx, failure):
+            from libs.github import JsonMutation, guarded_json_mutation
+            result = {"merged": True, "sha": SHA}
+            api = Mock(side_effect=ValueError("mutate") if failure == "mutate" else None,
+                       return_value=result)
+            request = JsonMutation(api, "PUT", "repos/example/work/pulls/7/merge", {"sha": SHA})
+            prepare = Mock(side_effect=ValueError("prepare") if failure == "prepare" else None,
+                           return_value=request)
+            confirm = Mock(side_effect=ValueError("confirm") if failure == "confirm" else None,
+                           return_value=SHA)
+            trace = Mock()
+            for name, callback in (("prepare", prepare), ("api", api), ("confirm", confirm)):
+                trace.attach_mock(callback, name)
+            frame = guarded_json_mutation(prepare, confirm)
+            self.assertEqual(frame.contract.stages, ("prepare", "mutate", "confirm"))
+            self.assertIs(frame.callbacks[1], JsonMutation.execute)
+            if failure:
+                with self.assertRaisesRegex(ValueError, failure):
+                    frame.execute(ctx)
+            else:
+                self.assertEqual(frame.execute(ctx), SHA)
+            expected = [call.prepare(ctx)]
+            if failure != "prepare":
+                expected.append(call.api("PUT", "repos/example/work/pulls/7/merge", {"sha": SHA}))
+            if failure not in ("prepare", "mutate"):
+                expected.append(call.confirm(result))
+            self.assertEqual(trace.mock_calls, expected)
+
+        self.run_cases(cases, check)
+
+    def test_merge_operation_does_not_reuse_review_state(self):
+        def check(ctx):
+            from github.merge import MERGE, MergeOperation
+            from dataclasses import FrozenInstanceError
+            root = "repos/example/work"
+            pr = ctx.pull_request()
+            invalid = dict(pr, draft=True)
+            api = Mock(side_effect=[{"default_branch": "main"}, pr, {"merged": True, "sha": SHA},
+                                    {"default_branch": "main"}, invalid])
+            operation = MergeOperation(api, REPO, REF, 7, SHA)
+            self.assertEqual(MERGE.execute(operation), SHA)
+            self.assertEqual(operation.pr_number, 7)
+            with self.assertRaises(FrozenInstanceError):
+                operation.expected_head_sha = "b" * 40
+            self.assert_rejected(MERGE.execute, operation)
+            self.assertEqual(api.call_args_list, [
+                call("GET", root), call("GET", root + "/pulls/7"),
+                call("PUT", root + "/pulls/7/merge", {"sha": SHA, "merge_method": "merge"}),
+                call("GET", root), call("GET", root + "/pulls/7")])
+
+        self.run_contract(check=check)
