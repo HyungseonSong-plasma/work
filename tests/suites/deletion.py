@@ -8,7 +8,7 @@ from unittest.mock import Mock, call, patch
 from app.framework.model import ActionsContext
 from types import SimpleNamespace
 from github import actions, delete as deletion
-from github.framework.transport import delete_resource
+from libs.github import GitHubClient
 from tests.framework.registry import register
 from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
@@ -229,12 +229,12 @@ class DeletionContract(TestSuite):
             send = MagicMock()
             send.return_value.__enter__.return_value = response
             endpoint = "repos/example/work/actions/runs/12"
-            with patch("github.framework.transport._request") as request:
+            with patch.object(GitHubClient, "_request") as request:
                 if allowed:
-                    delete_resource(endpoint, send=send)
-                    request.assert_called_once_with("DELETE", endpoint)
+                    GitHubClient(send).delete(endpoint)
+                    request.assert_called_once_with("DELETE", endpoint, None)
                 else:
-                    self.assert_rejected(delete_resource, endpoint, send=send)
+                    self.assert_rejected(GitHubClient(send).delete, endpoint)
 
         self.run_cases(cases, check)
 
@@ -372,8 +372,8 @@ class DeletionContract(TestSuite):
                 self.assertEqual(command.DeleteCommand.execute(args), 0)
                 context.assert_called_once_with(args)
                 context.return_value.validate.assert_called_once_with()
-                delete.assert_called_once_with("actions_batch", api=command.github_api,
-                    remove=command.delete_resource, repository=REPO, run_ref=REF,
+                delete.assert_called_once_with("actions_batch", api=command.CLIENT.request,
+                    remove=command.CLIENT.delete, repository=REPO, run_ref=REF,
                     current_run_id=13, targets=[target], report=validated.report)
 
         self.run_contract(check=check)
@@ -507,7 +507,7 @@ class DeletionContract(TestSuite):
                 return "Done"
 
             with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
-                    patch("github.framework.transport.subprocess.run",
+                    patch("libs.github.subprocess.run",
                                  side_effect=[None, SimpleNamespace(returncode=status)]) as run:
                 args = (ctx.api, REPO, REF, "7", SHA, "remote")
                 if status:

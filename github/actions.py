@@ -5,7 +5,7 @@ import json
 import re
 
 from config import require_deletion, load_registry
-from github.framework.model import validate_sha, review_repository
+from libs.github import validate_sha, review_repository
 
 
 def actions_request(request):

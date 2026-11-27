@@ -4,8 +4,8 @@
 import json
 
 from github.actions import actions_request
-from github.framework.transport import dispatch_workflow
-from github.framework.model import (validate_sha, validate_pr_number, require_default_ref,
+from libs.github import CLIENT
+from libs.github import (validate_sha, validate_pr_number, require_default_ref,
                                     parse_execute_comment)
 
 
@@ -96,7 +96,7 @@ def route(event, repository, ref, *, routes, resolve):
     }
 
 
-def dispatch_request(event, repository, ref, dispatch=dispatch_workflow, *, routes, resolve):
+def dispatch_request(event, repository, ref, dispatch=CLIENT.dispatch, *, routes, resolve):
     """Validate and submit exactly one matching workflow."""
     workflow, payload = route(event, repository, ref, routes=routes, resolve=resolve)
     dispatch(repository, workflow, payload)

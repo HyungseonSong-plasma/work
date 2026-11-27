@@ -3,12 +3,13 @@
 
 from app.framework.model import Command, pr_plan
 from app.framework.registry import register
-from github.framework.transport import github_api
+from libs.github import CLIENT
 from github import merge
 
 
 def action(ctx, args):
-    return merge.merge_pr(github_api, ctx.repository, ctx.ref, ctx.number, ctx.sha)
+    return merge.MERGE.execute(merge.MergeOperation(CLIENT.request, ctx.repository,
+                                                    ctx.ref, ctx.number, ctx.sha))
 
 
 def report(ctx, result):
