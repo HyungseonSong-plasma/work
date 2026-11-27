@@ -5,7 +5,7 @@ from copy import deepcopy
 import json
 from unittest.mock import Mock, patch
 
-from app.commands.delete import validate_actions_context
+from app.commands.model import validate_actions_context
 from github import delete as deletion
 from github.model import delete_resource
 from tests.registry import register
