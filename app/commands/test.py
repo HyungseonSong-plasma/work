@@ -4,10 +4,10 @@
 import unittest
 
 from app.framework.registry import register
-from app.framework.model import Command
+from app.framework.model import Command, local_plan
 
 
-def execute():
+def action(ctx, args):
     # Load test implementations only for this command, not workflow execution.
     from tests import suites
     from tests.framework.registry import build_suite
@@ -19,7 +19,4 @@ def execute():
 @register("test")
 class TestCommand(Command):
     help = "Run registered offline regression tests"
-
-    @staticmethod
-    def execute(args):
-        return execute()
+    plan = local_plan(action)

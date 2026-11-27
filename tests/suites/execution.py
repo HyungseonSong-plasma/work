@@ -3,6 +3,7 @@
 
 from contextlib import contextmanager
 import sys
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
@@ -24,7 +25,7 @@ class ExecutionContract(TestSuite):
                     yield
 
         def act(ctx):
-            return execute_command.execute(True, None)
+            return execute_command.ExecuteCommand.execute(SimpleNamespace(single=True, serial_stage=None))
 
         def check(ctx, error):
             ctx.run.assert_not_called()
@@ -163,3 +164,72 @@ class ExecutionContract(TestSuite):
                 self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)
 
         self.run_contract(check=check)
+
+    def test_command_workflow_validation_precedes_action(self):
+        cases = (
+            ("trigger_wrong_event", "trigger", ["trigger"], {"GITHUB_EVENT_NAME": "workflow_dispatch"}),
+            ("trigger_rerun", "trigger", ["trigger"], {"GITHUB_EVENT_NAME": "issue_comment", "GITHUB_RUN_ATTEMPT": "2"}),
+            ("execute_wrong_event", "execute", ["execute", "--single"], {"GITHUB_EVENT_NAME": "issue_comment"}),
+            ("execute_rerun", "execute", ["execute", "--single"], {"GITHUB_RUN_ATTEMPT": "2"}),
+            ("merge_wrong_event", "merge", ["merge"], {"GITHUB_EVENT_NAME": "issue_comment"}),
+            ("merge_rerun", "merge", ["merge"], {"GITHUB_RUN_ATTEMPT": "2"}),
+            ("branch_wrong_event", "delete", ["delete", "branch"], {"GITHUB_EVENT_NAME": "issue_comment"}),
+            ("branch_rerun", "delete", ["delete", "branch"], {"GITHUB_RUN_ATTEMPT": "2"}),
+            ("actions_wrong_event", "delete", ["delete", "actions"], {"GITHUB_EVENT_NAME": "issue_comment"}),
+            ("actions_rerun", "delete", ["delete", "actions"], {"GITHUB_RUN_ATTEMPT": "2"}),
+        )
+
+        def check(ctx, name, args, changes):
+            from app import cli
+            from app.commands import trigger as trigger_command
+            with ctx.patched_environment(EXECUTION="pr_merge.py", **changes):
+                with patch.object(trigger_command, "dispatch_request") as dispatch, \
+                        patch.object(execute_command, "run_execution") as run, \
+                        patch.object(merge_command.merge, "merge_pr") as merge, \
+                        patch.object(delete_command, "delete") as delete:
+                    self.assertEqual(cli.main(args), 1)
+                    for action in (dispatch, run, merge, delete):
+                        action.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_trigger_reports_exact_dispatch(self):
+        def check(ctx):
+            from app.commands import trigger as trigger_command
+            from app import cli
+            from app.framework.model import Context
+            event = ctx.event("pr_merge.py")
+            with ctx.patched_environment(GITHUB_EVENT_NAME="issue_comment"):
+                with patch.object(Context, "read_event", return_value=event) as read, \
+                        patch.object(trigger_command, "dispatch_request",
+                                     return_value=("single_run.yml", "comment-12")) as dispatch, \
+                        patch.object(Context, "report") as report:
+                    self.assertEqual(cli.main(["trigger"]), 0)
+                    read.assert_called_once_with()
+                    dispatch.assert_called_once_with(event, REPO, REF)
+                    report.assert_called_once_with(
+                        "Submitted single_run.yml: comment-12",
+                        "Submitted `single_run.yml` for `comment-12`.\n\n"
+                        "Execution result is reported by the dispatched run.\n")
+
+        self.run_contract(check=check)
+
+    def test_execute_command_propagates_child_status(self):
+        cases = (("single", ["execute", "--single"], "pr_merge.py", None, 5),
+                 ("serial", ["execute", "--serial-stage", "2"],
+                  "pr_merge.py - branch_delete.py", 2, 7))
+
+        def check(ctx, args, expression, stage, expected):
+            from app import cli
+            with ctx.patched_environment(EXECUTION=expression):
+                with patch.object(execute_command, "run_execution", return_value=expected) as run, \
+                        patch.object(execute_command, "run_stage", return_value=expected) as serial:
+                    self.assertEqual(cli.main(args), expected)
+                    if stage is None:
+                        run.assert_called_once_with(("pr_merge.py",))
+                        serial.assert_not_called()
+                    else:
+                        serial.assert_called_once_with(("pr_merge.py", "branch_delete.py"), stage)
+                        run.assert_not_called()
+
+        self.run_cases(cases, check)

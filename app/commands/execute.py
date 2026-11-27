@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from app.framework.registry import register, resolve_execution, workflow_commands
-from app.framework.model import Command, Context
+from app.framework.model import Command, workflow_plan
 
 
 def run_execution(executions, run=subprocess.run):
@@ -35,26 +35,28 @@ def run_stage(executions, stage, run=subprocess.run):
     return run_execution([executions[stage - 1]], run=run)
 
 
-def execute(single, stage):
-    ctx = Context().require_event("workflow_dispatch", fresh=True)
+def validate(ctx, args):
     executions = resolve_execution(ctx.execution, ctx.parameters)
-    if single:
+    if args.single:
         if len(executions) != 1:
             raise ValueError("Single execution requires exactly one command.")
-        return run_execution(executions)
-    return run_stage(executions, stage)
+    elif len(executions) != 2 or args.serial_stage not in (1, 2):
+        raise ValueError("Serial execution requires exactly two commands.")
+    return executions
 
+
+def action(executions, args):
+    if args.single:
+        return run_execution(executions)
+    return run_stage(executions, args.serial_stage)
 
 @register("execute")
 class ExecuteCommand(Command):
     help = "Run validated execution stages"
+    plan = workflow_plan("workflow_dispatch", action, validate=validate, returns_status=True)
 
     @staticmethod
     def configure(parser):
         mode = parser.add_mutually_exclusive_group(required=True)
         mode.add_argument("--single", action="store_true")
         mode.add_argument("--serial-stage", type=int, choices=(1, 2))
-
-    @staticmethod
-    def execute(args):
-        return execute(args.single, args.serial_stage)
