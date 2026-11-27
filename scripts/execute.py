@@ -88,6 +88,14 @@ def comment_request(event):
     })
 
 
+def run_stage(scripts, stage, run=subprocess.run):
+    """Run exactly one slot of a validated two-script serial request."""
+    if len(scripts) != 2 or stage not in (1, 2):
+        raise ValueError("Serial execution requires exactly two scripts.")
+    return run_execution([scripts[stage - 1]], run=run)
+
+
+
 def main():
     try:
         event_name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
@@ -104,7 +112,16 @@ def main():
             os.environ["EXECUTION"], os.environ["EXECUTION_INPUTS"]
         )
         # Every child inherits the same JSON parameters. No shell evaluation.
-        return run_execution(scripts)
+        args = sys.argv[1:]
+        if not args:
+            return run_execution(scripts)
+        if args == ["--single"]:
+            if len(scripts) != 1:
+                raise ValueError("Single execution requires exactly one script.")
+            return run_execution(scripts)
+        if args not in (["--serial-stage", "1"], ["--serial-stage", "2"]):
+            raise ValueError("Expected --single or --serial-stage 1 or 2.")
+        return run_stage(scripts, int(args[1]))
     except (KeyError, ValueError, OSError) as error:
         print(f"Invalid execution request: {error}", file=sys.stderr)
         return 1
