@@ -147,3 +147,7 @@ Trigger and Actions approval independently check unchanged comment timestamps us
 ## Distribution release gate
 
 The development version is not a release. Before assigning a stable version or publishing, approve distribution naming and licensing, review the release commit, run the exact snapshot and installed-artifact gates, and record interpreter/backend versions, the reviewed source SHA and artifact SHA256 values. The packaging probe verifies archive payloads, wheel RECORD digests, installed entrypoints and ignored ambient PYTHONPATH for the fixed child command. No public distribution rights or byte-identical reproducible archive claim is implied by a successful build.
+
+## Reusable Test Workflow
+
+See [Test Workflow Contract](docs/workflow-contract.md) for the pinned development workflow, fixed consumer contract path and caller/provider trust boundary. Existing operation workflows remain repository-local.

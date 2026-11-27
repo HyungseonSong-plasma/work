@@ -1,0 +1,70 @@
+# FileRank: C
+name: Reusable Work contract test
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Require a fresh trusted personal-repository branch event
+        shell: bash
+        env:
+          OWNER_ID: ${{ github.event.repository.owner.id }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in push|workflow_dispatch) ;; *) exit 1 ;; esac
+          case "$GITHUB_REF" in refs/heads/*) ;; *) exit 1 ;; esac
+          test -n "$OWNER_ID"
+          test "$GITHUB_ACTOR_ID" = "$OWNER_ID"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - name: Check out caller at event SHA
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: caller
+          persist-credentials: false
+      - name: Check out independently pinned provider
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: HyungseonSong-plasma/work
+          ref: c21f73ae8f1bd1f8d80f1ae3955c57607cf85896
+          path: provider
+          persist-credentials: false
+      - name: Build reviewed provider and run caller contract with installed package
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider="$GITHUB_WORKSPACE/provider"
+          caller="$GITHUB_WORKSPACE/caller"
+          test "$(git -C "$provider" rev-parse HEAD)" = "c21f73ae8f1bd1f8d80f1ae3955c57607cf85896"
+          test "$(git -C "$caller" rev-parse HEAD)" = "$GITHUB_SHA"
+          printf 'Provider SHA: %s\nCaller: %s @ %s\n' "c21f73ae8f1bd1f8d80f1ae3955c57607cf85896" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          contract="$caller/tests/work_contract.py"
+          test -f "$contract"
+          test ! -L "$caller/tests"
+          test ! -L "$contract"
+          test "$(realpath "$contract")" = "$contract"
+          tmp="$(mktemp -d "$RUNNER_TEMP/work-contract.XXXXXX")"
+          mkdir "$tmp/backend" "$tmp/dist" "$tmp/home" "$tmp/run"
+          python -m pip --isolated download --index-url https://pypi.org/simple --no-deps --only-binary=:all: setuptools==82.0.1 -d "$tmp/backend"
+          (cd "$tmp/backend"; printf '%s  %s\n' a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb setuptools-82.0.1-py3-none-any.whl | sha256sum -c -)
+          cd "$tmp/run"
+          python -m pip --isolated wheel --no-index --find-links "$tmp/backend" --no-deps --wheel-dir "$tmp/dist" "$provider"
+          wheel="$tmp/dist/work_framework-0.1.0.dev0-py3-none-any.whl"
+          test -f "$wheel"
+          sha256sum "$wheel"
+          python -m venv "$tmp/consumer"
+          py="$tmp/consumer/bin/python"
+          "$py" -m pip --isolated install --no-index --no-deps "$wheel"
+          "$py" -m pip check
+          "$py" -I -c 'import work, sys; from pathlib import Path; from importlib.metadata import version; assert Path(work.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()); assert version("work-framework") == "0.1.0.dev0"; print("Installed provider:", work.__file__)'
+          env -i PATH="$PATH" HOME="$tmp/home" LC_ALL=C.UTF-8 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 "$py" -I "$contract"
+          echo "Consumer contract passed."
