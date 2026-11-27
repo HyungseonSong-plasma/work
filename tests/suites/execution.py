@@ -79,45 +79,68 @@ class ExecutionContract(TestSuite):
         self.run_contract(act, check, arrange=arrange)
 
     def test_branch_disabled_blocks_before_api(self):
-        from github.delete import delete_branch
-        api, git = Mock(), Mock()
-        with patch("config.load_registry", return_value={
-                "branch": {"enabled": False, "permission": "contents: write"}}):
-            with self.assertRaises(ValueError):
-                delete_branch(api, git, REPO, REF, "7", SHA, "remote")
-        api.assert_not_called()
-        git.assert_not_called()
+        def check(ctx):
+            from github.delete import delete_branch
+            api, git = Mock(), Mock()
+            with patch("config.load_registry", return_value={
+                    "branch": {"enabled": False, "permission": "contents: write"}}):
+                with self.assertRaises(ValueError):
+                    delete_branch(api, git, REPO, REF, "7", SHA, "remote")
+            api.assert_not_called()
+            git.assert_not_called()
+
+        self.run_contract(check=check)
 
     def test_branch_adapter_uses_shared_context(self):
-        from app import cli
-        with self.ctx.patched_environment():
-            with patch.object(delete_command, "delete", return_value="Deleted branch") as call:
-                self.assertEqual(cli.main(["delete", "branch"]), 0)
-                call.assert_called_once_with("branch", api=delete_command.github_api,
-                    repository=REPO, run_ref=REF, number="7", sha=SHA,
-                    remote=f"https://github.com/{REPO}.git")
+        def check(ctx):
+            from app import cli
+            with ctx.patched_environment():
+                with patch.object(delete_command, "delete", return_value="Deleted branch") as call:
+                    self.assertEqual(cli.main(["delete", "branch"]), 0)
+                    call.assert_called_once_with("branch", api=delete_command.github_api,
+                        repository=REPO, run_ref=REF, number="7", sha=SHA,
+                        remote=f"https://github.com/{REPO}.git")
+
+        self.run_contract(check=check)
 
     def test_branch_rejects_actions_arguments(self):
-        from app import cli
-        with patch.object(delete_command, "delete") as call:
-            self.assertEqual(cli.main(["delete", "branch", "--run-id", "12"]), 1)
-            call.assert_not_called()
+        def check(ctx):
+            from app import cli
+            with patch.object(delete_command, "delete") as call:
+                self.assertEqual(cli.main(["delete", "branch", "--run-id", "12"]), 1)
+                call.assert_not_called()
+
+        self.run_contract(check=check)
 
     def test_context_snapshots_environment(self):
-        env = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF}
-        ctx = Context(env)
-        env["GITHUB_REF"] = "changed"
-        self.assertEqual((ctx.repository, ctx.ref), (REPO, REF))
+        def snapshot(ctx):
+            ctx.env = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF}
+            ctx.snapshot = Context(ctx.env)
+
+        def mutate(ctx):
+            ctx.env["GITHUB_REF"] = "changed"
+
+        def check(ctx):
+            self.assertEqual((ctx.snapshot.repository, ctx.snapshot.ref), (REPO, REF))
+
+        steps = (("snapshot", snapshot), ("mutate_source", mutate))
+        self.run_scenario(steps, check)
 
     def test_pr_context_exposes_validated_fields(self):
-        ctx = PRContext("pr_merge.py", env=self.ctx.environment()).validate()
-        self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
-                         ("7", SHA, REPO, REF))
+        def check(ctx):
+            ctx = PRContext("pr_merge.py", env=ctx.environment()).validate()
+            self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
+                             ("7", SHA, REPO, REF))
+
+        self.run_contract(check=check)
 
     def test_execution_identifiers_need_no_physical_scripts(self):
-        self.assertFalse((ROOT / "scripts").exists())
-        self.assertEqual(resolve_execution("pr_merge.py - branch_delete.py", PARAMS),
-                         ("pr_merge.py", "branch_delete.py"))
+        def check(ctx):
+            self.assertFalse((ROOT / "scripts").exists())
+            self.assertEqual(resolve_execution("pr_merge.py - branch_delete.py", PARAMS),
+                             ("pr_merge.py", "branch_delete.py"))
+
+        self.run_contract(check=check)
 
     def test_registry_rejects_unknown_duplicate_reverse_or_path(self):
         cases = (
@@ -134,6 +157,9 @@ class ExecutionContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_resolution_rejects_missing_command_binding(self):
-        from app.framework.registry import COMMANDS
-        with patch.object(COMMANDS["merge"], "workflow_execution", ()):
-            self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)
+        def check(ctx):
+            from app.framework.registry import COMMANDS
+            with patch.object(COMMANDS["merge"], "workflow_execution", ()):
+                self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)
+
+        self.run_contract(check=check)

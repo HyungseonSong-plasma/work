@@ -50,16 +50,27 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_workflow_registry_extends_without_routing_branch(self):
-        registry = WorkflowRegistry()
-        registry.register(("first.py", "second.py", "third.py"), "new_run.yml")
-        self.assertEqual(registry.resolve(iter(("first.py", "second.py", "third.py"))),
-                         "new_run.yml")
+        def register_route(ctx):
+            ctx.registry = WorkflowRegistry()
+            ctx.registry.register(("first.py", "second.py", "third.py"), "new_run.yml")
+
+        def check(ctx):
+            self.assertEqual(ctx.registry.resolve(iter(("first.py", "second.py", "third.py"))),
+                             "new_run.yml")
+
+        steps = (("register", register_route),)
+        self.run_scenario(steps, check)
 
     def test_workflow_registry_preserves_order(self):
-        registry = WorkflowRegistry()
-        registry.register(("first.py", "second.py"), "serial.yml")
-        with self.assertRaises(ValueError):
-            registry.resolve(("second.py", "first.py"))
+        def register_route(ctx):
+            ctx.registry = WorkflowRegistry()
+            ctx.registry.register(("first.py", "second.py"), "serial.yml")
+
+        def check(ctx):
+            self.assert_rejected(ctx.registry.resolve, ("second.py", "first.py"))
+
+        steps = (("register", register_route),)
+        self.run_scenario(steps, check)
 
     def test_workflow_registry_rejects_duplicate(self):
         def register(ctx):
@@ -117,6 +128,9 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_trigger_parses_owner_comment_once(self):
-        with patch.object(trigger, "owner_comment", wraps=trigger.owner_comment) as parse:
-            trigger.dispatch_request(self.ctx.event("pr_merge.py"), REPO, REF, Mock())
-            parse.assert_called_once()
+        def check(ctx):
+            with patch.object(trigger, "owner_comment", wraps=trigger.owner_comment) as parse:
+                trigger.dispatch_request(ctx.event("pr_merge.py"), REPO, REF, Mock())
+                parse.assert_called_once()
+
+        self.run_contract(check=check)

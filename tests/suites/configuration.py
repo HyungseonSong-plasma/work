@@ -16,18 +16,27 @@ class ConfigurationContract(TestSuite):
     context_type = ConfigurationTestContext
 
     def test_configured_commands_exclude_unlisted(self):
-        with patch("app.framework.registry.load_names", return_value=("trigger",)):
-            self.assertEqual(tuple(configured_commands()), ("trigger",))
+        def check(ctx):
+            with patch("app.framework.registry.load_names", return_value=("trigger",)):
+                self.assertEqual(tuple(configured_commands()), ("trigger",))
+
+        self.run_contract(check=check)
 
     def test_unknown_configured_command_rejected(self):
-        with patch("app.framework.registry.load_names", return_value=("missing",)):
-            with self.assertRaises(ValueError):
-                configured_commands()
+        def check(ctx):
+            with patch("app.framework.registry.load_names", return_value=("missing",)):
+                with self.assertRaises(ValueError):
+                    configured_commands()
+
+        self.run_contract(check=check)
 
     def test_duplicate_names_rejected(self):
-        with patch("config.load_registry", return_value=["task", "task"]):
-            with self.assertRaises(ValueError):
-                load_names("commands")
+        def check(ctx):
+            with patch("config.load_registry", return_value=["task", "task"]):
+                with self.assertRaises(ValueError):
+                    load_names("commands")
+
+        self.run_contract(check=check)
 
     def test_workflow_entries_reject_invalid_routes(self):
         entry = {"execution": ["pr_merge.py"], "workflow": "single_run.yml"}
@@ -42,28 +51,37 @@ class ConfigurationContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_deletion_config(self):
-        require_deletion("branch")
-        require_deletion("actions")
         cases = (
-            ("issue", "issue"),
-            ("unknown", "unknown"),
+            ("branch", "branch", True),
+            ("actions", "actions", True),
+            ("issue", "issue", False),
+            ("unknown", "unknown", False),
         )
 
-        def check(ctx, target):
-            self.assert_rejected(require_deletion, target)
+        def check(ctx, target, allowed):
+            if allowed:
+                require_deletion(target)
+            else:
+                self.assert_rejected(require_deletion, target)
 
         self.run_cases(cases, check)
 
     def test_issue_cannot_be_enabled_by_config_alone(self):
-        with patch("config.load_registry", return_value={
-                "issue": {"enabled": True, "permission": "owner authorization"}}):
-            with self.assertRaises(ValueError):
-                require_deletion("issue")
+        def check(ctx):
+            with patch("config.load_registry", return_value={
+                    "issue": {"enabled": True, "permission": "owner authorization"}}):
+                with self.assertRaises(ValueError):
+                    require_deletion("issue")
+
+        self.run_contract(check=check)
 
     def test_toml_loader_preserves_array_order(self):
-        with self.ctx.registry_root({"commands.toml":
-                '# Registry order\ncommands = ["trigger", "test"]\n'}):
-            self.assertEqual(load_names("commands"), ("trigger", "test"))
+        def check(ctx):
+            with ctx.registry_root({"commands.toml":
+                    '# Registry order\ncommands = ["trigger", "test"]\n'}):
+                self.assertEqual(load_names("commands"), ("trigger", "test"))
+
+        self.run_contract(check=check)
 
     def test_toml_loader_rejects_invalid_documents(self):
         cases = (
@@ -78,11 +96,14 @@ class ConfigurationContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_toml_loader_rejects_missing_and_symlink_files(self):
-        with self.ctx.registry_root() as root:
-            with self.assertRaises(ValueError):
-                load_registry("commands")
-            target = root / "other.toml"
-            target.write_text('commands = ["trigger"]\n', encoding="utf-8")
-            (root / "commands.toml").symlink_to(target)
-            with self.assertRaises(ValueError):
-                load_registry("commands")
+        cases = (("missing", False), ("symlink", True))
+
+        def check(ctx, symlink):
+            with ctx.registry_root() as root:
+                if symlink:
+                    target = root / "other.toml"
+                    target.write_text('commands = ["trigger"]\n', encoding="utf-8")
+                    (root / "commands.toml").symlink_to(target)
+                self.assert_rejected(load_registry, "commands")
+
+        self.run_cases(cases, check)
