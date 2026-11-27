@@ -1,0 +1,71 @@
+# FileRank: C
+name: D2 exact-snapshot offline verification
+on:
+  push:
+    branches: [test/d2-namespace-verification]
+    paths: ['.github/workflows/d2_namespace_probe.yml']
+permissions: {}
+jobs:
+  regression:
+    if: ${{ github.repository_id == '1473784826' && github.actor_id == '189476866' && github.run_attempt == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 5fff9c2a497eb43e9bb6ac0eb9ec67c54f47f2a3
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 88deebf0cbc269a9924f1b5963c5e44f74919579
+          path: candidate
+          persist-credentials: false
+      - name: Verify exact namespaces and run the Q6 gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "5fff9c2a497eb43e9bb6ac0eb9ec67c54f47f2a3"
+          test "$(git -C candidate rev-parse HEAD)" = "88deebf0cbc269a9924f1b5963c5e44f74919579"
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          old, new = Path("baseline"), Path("candidate")
+          old_files = sorted(p.relative_to(old / "libs") for p in (old / "libs").rglob("*.py"))
+          new_files = sorted(p.relative_to(new / "work" / "libs") for p in (new / "work" / "libs").rglob("*.py"))
+          assert old_files == new_files and len(old_files) == 8
+          assert not (new / "libs").exists()
+          for rel in old_files:
+              a = (old / "libs" / rel).read_text()
+              b = (new / "work" / "libs" / rel).read_text()
+              assert a == b.replace("from work.libs", "from libs").replace("import work.libs", "import libs"), rel
+          for area in ("app", "github"):
+              paths = sorted(p.relative_to(old) for p in (old / area).rglob("*.py"))
+              assert paths == sorted(p.relative_to(new) for p in (new / area).rglob("*.py"))
+              for rel in paths:
+                  a = (old / rel).read_text()
+                  b = (new / rel).read_text()
+                  assert a == b.replace("from work.libs", "from libs").replace("import work.libs", "import libs"), rel
+          for area in ("config", ".github/workflows"):
+              a = {p.relative_to(old): p.read_bytes() for p in (old / area).rglob("*") if p.is_file()}
+              b = {p.relative_to(new): p.read_bytes() for p in (new / area).rglob("*") if p.is_file()}
+              assert a == b, area
+          print("8 library files and all app/domain files identical after import normalization; config and production workflows byte-identical.")
+          PY
+          cd candidate
+          python3 -B -m unittest -v tests.verification.test_compare
+          python3 -B tests/verification/compare.py --baseline ../baseline --baseline-sha 5fff9c2a497eb43e9bb6ac0eb9ec67c54f47f2a3 --candidate . --candidate-sha 88deebf0cbc269a9924f1b5963c5e44f74919579
+          python3 -B - <<'PY'
+          import sys
+          from work.libs import github, testing
+          from work.libs import _github_transport, _test_grammar
+          assert github.GitHubClient is _github_transport.GitHubClient
+          assert github.CLIENT is _github_transport.CLIENT
+          assert github.git_session is _github_transport.git_session
+          for name in ("RUNNERS", "DECLARATION_CALLS", "EXPRESSION_NODES", "validate_method"):
+              assert getattr(testing, name) is getattr(_test_grammar, name)
+          assert not any(n == "libs" or n.startswith("libs.") for n in sys.modules)
+          print("All seven re-export identities match; no old namespace loaded.")
+          PY
