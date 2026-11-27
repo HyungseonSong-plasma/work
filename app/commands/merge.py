@@ -1,17 +1,17 @@
 # FileRank: C
 """Merge an explicitly reviewed PR through the shared command model."""
 
-from app.commands.model import Command, pr_context, report
+from app.commands.model import Command, PRContext
 from app.registry import register
 from github.model import github_api
 from scripts import pr_merge
 
 
 def execute():
-    number, sha, repository, ref = pr_context("pr_merge.py")
-    result = pr_merge.merge_pr(github_api, repository, ref, number, sha)
-    report(f"Merged PR #{number}: {result}",
-           f"Merged PR #{number}\n\nMerge commit: `{result}`")
+    ctx = PRContext("pr_merge.py").validate()
+    result = pr_merge.merge_pr(github_api, ctx.repository, ctx.ref, ctx.number, ctx.sha)
+    ctx.report(f"Merged PR #{ctx.number}: {result}",
+               f"Merged PR #{ctx.number}\n\nMerge commit: `{result}`")
     return 0
 
 

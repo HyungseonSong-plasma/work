@@ -1,18 +1,14 @@
 # FileRank: C
 """Execution command and its workflow adapter."""
 
-import os
-
 from app.registry import register
-from app.commands.model import Command, require_event
+from app.commands.model import Command, Context
 from scripts.execute import resolve_execution, run_execution, run_stage
 
 
 def execute(single, stage):
-    require_event("workflow_dispatch", fresh=True)
-    scripts = resolve_execution(
-        os.environ["EXECUTION"], os.environ["EXECUTION_INPUTS"],
-    )
+    ctx = Context().require_event("workflow_dispatch", fresh=True)
+    scripts = resolve_execution(ctx.execution, ctx.parameters)
     if single:
         if len(scripts) != 1:
             raise ValueError("Single execution requires exactly one script.")

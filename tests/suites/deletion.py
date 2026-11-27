@@ -5,12 +5,34 @@ from copy import deepcopy
 import json
 from unittest.mock import Mock, patch
 
-from app.commands.model import validate_actions_context
+from app.commands.model import ActionsContext
+from types import SimpleNamespace
 from github import delete as deletion
 from github.model import delete_resource
 from tests.registry import register
 from tests.suites.model import TestSuite, REPO, REF, SHA, event
 from github import trigger
+
+
+def actions_context(event, repository, ref, actor_id, workflow_ref,
+                    request_id="", source_pr="", inputs=None, api=None):
+    """Exercise the full Context validation with injected environment and event."""
+    inputs = inputs or {"run_id": "12", "expected_head_sha": SHA,
+                        "expected_run_attempt": "1"}
+    args = SimpleNamespace(
+        runs=inputs.get("runs", ""),
+        run_id=int(inputs["run_id"]) if "run_id" in inputs else None,
+        expected_head_sha=inputs.get("expected_head_sha"),
+        expected_run_attempt=int(inputs["expected_run_attempt"])
+        if "expected_run_attempt" in inputs else None,
+        request_id=request_id, source_pr=source_pr)
+    env = {"GITHUB_REPOSITORY": repository, "GITHUB_REF": ref,
+           "GITHUB_ACTOR_ID": actor_id, "GITHUB_WORKFLOW_REF": workflow_ref,
+           "GITHUB_RUN_ID": "13", "GITHUB_EVENT_NAME": "workflow_dispatch",
+           "GITHUB_RUN_ATTEMPT": "1"}
+    ctx = ActionsContext(args, env=env, api=api or Mock())
+    with patch.object(ctx, "read_event", return_value=event):
+        return ctx.validate()
 
 
 @register("deletion")
@@ -145,10 +167,10 @@ class DeletionContract(TestSuite):
         event = {"repository": {"full_name": REPO, "default_branch": "main",
                                 "owner": {"id": 1}}, "sender": {"id": 1}}
         workflow_ref = f"{REPO}/.github/workflows/actions_delete.yml@{REF}"
-        validate_actions_context(event, REPO, REF, "1", workflow_ref)
-        self.assert_rejected(validate_actions_context, event, REPO, REF, "2", workflow_ref)
-        self.assert_rejected(validate_actions_context, event, REPO, REF, "1", "other")
-        self.assert_rejected(validate_actions_context, dict(event, sender={"id": 2}),
+        actions_context(event, REPO, REF, "1", workflow_ref)
+        self.assert_rejected(actions_context, event, REPO, REF, "2", workflow_ref)
+        self.assert_rejected(actions_context, event, REPO, REF, "1", "other")
+        self.assert_rejected(actions_context, dict(event, sender={"id": 2}),
                              REPO, REF, "1", workflow_ref)
 
     def test_rest_delete_requires_204(self):
@@ -203,7 +225,7 @@ class DeletionContract(TestSuite):
         pr = {"number": 7, "base": {"repo": {"full_name": REPO}}}
         workflow_ref = f"{REPO}/.github/workflows/actions_delete.yml@{REF}"
         def validate():
-            validate_actions_context(context, REPO, REF, "41898282", workflow_ref,
+            actions_context(context, REPO, REF, "41898282", workflow_ref,
                                      "comment-12", "7", inputs,
                                      api=Mock(side_effect=[comment, pr]))
         validate()
@@ -220,5 +242,58 @@ class DeletionContract(TestSuite):
         context = {"repository": {"full_name": REPO, "default_branch": "main",
                                    "owner": {"id": 1}},
                    "sender": {"id": 41898282, "login": "github-actions[bot]"}}
-        self.assert_rejected(validate_actions_context, context, REPO, REF, "41898282",
+        self.assert_rejected(actions_context, context, REPO, REF, "41898282",
                              f"{REPO}/.github/workflows/actions_delete.yml@{REF}")
+
+
+    def test_actions_context_normalizes_single_and_batch(self):
+        event = {"repository": {"full_name": REPO, "default_branch": "main",
+                                "owner": {"id": 1}}, "sender": {"id": 1}}
+        workflow_ref = f"{REPO}/.github/workflows/actions_delete.yml@{REF}"
+        target = {"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1}
+        single = actions_context(event, REPO, REF, "1", workflow_ref)
+        batch = actions_context(event, REPO, REF, "1", workflow_ref,
+                                inputs={"runs": json.dumps([target])})
+        self.assertEqual(single.targets, [target])
+        self.assertEqual(batch.targets, single.targets)
+
+    def test_actions_context_rejects_mixed_inputs_before_reading_event(self):
+        args = SimpleNamespace(runs="[]", run_id=12, expected_head_sha=SHA,
+                               expected_run_attempt=1, request_id="", source_pr="")
+        ctx = ActionsContext(args, env={"GITHUB_EVENT_NAME": "workflow_dispatch",
+                                       "GITHUB_RUN_ATTEMPT": "1"}, api=self.api)
+        with patch.object(ctx, "read_event") as read:
+            self.assert_rejected(ctx.validate)
+            read.assert_not_called()
+        self.api.assert_not_called()
+
+    def test_batch_approval_cannot_be_replaced_with_single(self):
+        event = {"repository": {"full_name": REPO, "default_branch": "main",
+                                "owner": {"id": 1}},
+                 "sender": {"id": 41898282, "login": "github-actions[bot]"}}
+        workflow_ref = f"{REPO}/.github/workflows/actions_delete.yml@{REF}"
+        target = {"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1}
+        comment = {"id": 12, "user": {"id": 1}, "author_association": "OWNER",
+                   "created_at": "now", "updated_at": "now",
+                   "issue_url": f"https://api.github.com/repos/{REPO}/issues/7",
+                   "body": "/execute " + json.dumps({"execution": "delete actions",
+                                                     "runs": [target]})}
+        pr = {"number": 7, "base": {"repo": {"full_name": REPO}}}
+        approved = actions_context(event, REPO, REF, "41898282", workflow_ref,
+                                   "comment-12", "7", {"runs": json.dumps([target])},
+                                   api=Mock(side_effect=[comment, pr]))
+        self.assertEqual(approved.targets, [target])
+        self.assert_rejected(actions_context, event, REPO, REF, "41898282", workflow_ref,
+                             "comment-12", "7", api=Mock(side_effect=[comment, pr]))
+
+    def test_actions_command_uses_one_batch_path(self):
+        from app.commands import delete as command
+        target = {"run_id": 12, "expected_head_sha": SHA, "expected_run_attempt": 1}
+        ctx = Mock(repository=REPO, ref=REF, run_id=13, targets=[target])
+        with patch.object(command, "ActionsContext") as context, \
+                patch.object(command, "delete") as delete:
+            context.return_value.validate.return_value = ctx
+            self.assertEqual(command.delete_actions(Mock()), 0)
+            delete.assert_called_once_with("actions_batch", api=command.github_api,
+                remove=command.delete_resource, repository=REPO, run_ref=REF,
+                current_run_id=13, targets=[target], report=ctx.report)
