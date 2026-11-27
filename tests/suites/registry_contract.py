@@ -54,7 +54,6 @@ class RegistryContract(TestSuite):
         with self.assertRaises(ValueError):
             build_suite(names=["empty"], registered={"empty": Empty})
 
-
     def test_context_is_fresh_per_test_case(self):
         from tests.suites.model import ActionsTestContext
         class FixtureCase(TestSuite):
@@ -96,7 +95,6 @@ class RegistryContract(TestSuite):
                 raise RuntimeError("test cleanup")
         self.assertEqual(config.ROOT, original)
         self.assertFalse(root.exists())
-
 
     def test_case_matrix_rejects_empty_invalid_or_duplicate_names(self):
         check = self.ctx.process()

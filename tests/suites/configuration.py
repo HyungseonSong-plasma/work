@@ -41,20 +41,24 @@ class ConfigurationContract(TestSuite):
 
         self.run_cases(cases, check)
 
-
     def test_deletion_config(self):
         require_deletion("branch")
         require_deletion("actions")
-        for target in ("issue", "unknown"):
-            with self.subTest(target=target):
-                self.assert_rejected(require_deletion, target)
+        cases = (
+            ("issue", "issue"),
+            ("unknown", "unknown"),
+        )
+
+        def check(ctx, target):
+            self.assert_rejected(require_deletion, target)
+
+        self.run_cases(cases, check)
 
     def test_issue_cannot_be_enabled_by_config_alone(self):
         with patch("config.load_registry", return_value={
                 "issue": {"enabled": True, "permission": "owner authorization"}}):
             with self.assertRaises(ValueError):
                 require_deletion("issue")
-
 
     def test_toml_loader_preserves_array_order(self):
         with self.ctx.registry_root({"commands.toml":
@@ -72,7 +76,6 @@ class ConfigurationContract(TestSuite):
                 self.assert_rejected(load_registry, "commands")
 
         self.run_cases(cases, check)
-
 
     def test_toml_loader_rejects_missing_and_symlink_files(self):
         with self.ctx.registry_root() as root:

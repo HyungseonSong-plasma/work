@@ -30,14 +30,23 @@ class DeletionContract(TestSuite):
         handler.assert_called_once_with(number="7")
 
     def test_disabled_and_unknown_targets(self):
-        for target in ("issue", "unknown"):
-            with self.subTest(target=target):
+        cases = (
+            ("issue", "issue", None),
+            ("unknown", "unknown", None),
+            ("disabled_actions", "actions",
+             {"actions": {"enabled": False, "permission": "actions: write"}}),
+        )
+
+        def check(ctx, target, config):
+            if config is None:
                 self.assert_rejected(deletion.delete, target)
-        with patch("config.load_registry", return_value={
-                "actions": {"enabled": False, "permission": "actions: write"}}):
-            self.assert_rejected(deletion.delete, "actions", **self.ctx.parameters)
-        self.ctx.api.assert_not_called()
-        self.ctx.remove.assert_not_called()
+            else:
+                with patch("config.load_registry", return_value=config):
+                    self.assert_rejected(deletion.delete, target, **ctx.parameters)
+            ctx.api.assert_not_called()
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
 
     def test_actions_reject_invalid_or_current_id(self):
         cases = (
@@ -164,8 +173,6 @@ class DeletionContract(TestSuite):
         dispatch.assert_called_once()
         self.assertEqual(json.loads(dispatch.call_args.args[2]["inputs"]["runs"]), targets)
 
-
-
     def test_actions_context_requires_owner_and_workflow(self):
         event = self.ctx.approval_event()
         self.ctx.validate_context(event, REPO, REF, "1", self.ctx.workflow_ref)
@@ -196,7 +203,6 @@ class DeletionContract(TestSuite):
             request.assert_called_once_with("DELETE", "repos/example/work/actions/runs/12")
             response.status = 200
             self.assert_rejected(delete_resource, "repos/example/work/actions/runs/12", send=send)
-
 
     def test_owner_comment_routes_actions_only(self):
         request = self.ctx.event("pr_merge.py")
@@ -231,30 +237,36 @@ class DeletionContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_actions_worker_revalidates_source_comment(self):
-        context = self.ctx.approval_event(bot=True)
-        inputs = {"run_id": "12", "expected_head_sha": SHA, "expected_run_attempt": "1"}
         body = {"execution": "delete actions", "run_id": 12,
                 "expected_head_sha": SHA, "expected_run_attempt": 1}
-        comment = {"id": 12, "user": {"id": 1}, "author_association": "OWNER",
-                   "created_at": "now", "updated_at": "now",
-                   "issue_url": f"https://api.github.com/repos/{REPO}/issues/7",
-                   "body": "/execute " + json.dumps(body)}
-        pr = {"number": 7, "base": {"repo": {"full_name": REPO}}}
-        workflow_ref = self.ctx.workflow_ref
-        def validate():
-            self.ctx.validate_context(context, REPO, REF, "41898282", workflow_ref,
-                                     "comment-12", "7", inputs,
-                                     api=Mock(side_effect=[comment, pr]))
-        validate()
-        for change in ({"updated_at": "later"}, {"user": {"id": 2}},
-                       {"body": "/execute " + json.dumps(dict(body, run_id=99))}):
-            with self.subTest(change=change):
-                original = dict(comment)
-                comment.update(change)
-                self.assert_rejected(validate)
-                comment.clear()
-                comment.update(original)
+        cases = (
+            ("valid", {}, True),
+            ("edited", {"updated_at": "later"}, False),
+            ("wrong_owner", {"user": {"id": 2}}, False),
+            ("changed_target", {"body": "/execute " + json.dumps(dict(body, run_id=99))}, False),
+        )
 
+        def check(ctx, changes, valid):
+            context = ctx.approval_event(bot=True)
+            inputs = {"run_id": "12", "expected_head_sha": SHA, "expected_run_attempt": "1"}
+            comment = {"id": 12, "user": {"id": 1}, "author_association": "OWNER",
+                       "created_at": "now", "updated_at": "now",
+                       "issue_url": f"https://api.github.com/repos/{REPO}/issues/7",
+                       "body": "/execute " + json.dumps(body)}
+            comment.update(changes)
+            pr = {"number": 7, "base": {"repo": {"full_name": REPO}}}
+
+            def validate():
+                return ctx.validate_context(context, REPO, REF, "41898282", ctx.workflow_ref,
+                                            "comment-12", "7", inputs,
+                                            api=Mock(side_effect=[comment, pr]))
+
+            if valid:
+                validate()
+            else:
+                self.assert_rejected(validate)
+
+        self.run_cases(cases, check)
 
     def test_actions_context_normalizes_single_and_batch(self):
         event = self.ctx.approval_event()

@@ -40,8 +40,6 @@ class ExecutionContract(TestSuite):
 
         self.run_cases(cases, check)
 
-
-
     def test_pr_context_rejects_invalid_inputs(self):
         cases = (
             ("invalid_parameters", {"EXECUTION_INPUTS": "{}"}),
@@ -71,7 +69,6 @@ class ExecutionContract(TestSuite):
         api.assert_not_called()
         git.assert_not_called()
 
-
     def test_branch_adapter_uses_shared_context(self):
         from app import cli
         with self.ctx.patched_environment():
@@ -87,7 +84,6 @@ class ExecutionContract(TestSuite):
             self.assertEqual(cli.main(["delete", "branch", "--run-id", "12"]), 1)
             call.assert_not_called()
 
-
     def test_context_snapshots_environment(self):
         env = {"GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF}
         ctx = Context(env)
@@ -99,17 +95,24 @@ class ExecutionContract(TestSuite):
         self.assertEqual((ctx.number, ctx.sha, ctx.repository, ctx.ref),
                          ("7", SHA, REPO, REF))
 
-
     def test_execution_identifiers_need_no_physical_scripts(self):
         self.assertFalse((ROOT / "scripts").exists())
         self.assertEqual(resolve_execution("pr_merge.py - branch_delete.py", PARAMS),
                          ("pr_merge.py", "branch_delete.py"))
 
     def test_registry_rejects_unknown_duplicate_reverse_or_path(self):
-        for expression in ("test.py", "pr_merge.py - pr_merge.py",
-                           "branch_delete.py - pr_merge.py", "../pr_merge.py", ""):
-            with self.subTest(expression=expression):
-                self.assert_rejected(resolve_execution, expression, PARAMS)
+        cases = (
+            ("unknown", "test.py"),
+            ("duplicate", "pr_merge.py - pr_merge.py"),
+            ("reverse", "branch_delete.py - pr_merge.py"),
+            ("path", "../pr_merge.py"),
+            ("empty", ""),
+        )
+
+        def check(ctx, expression):
+            self.assert_rejected(resolve_execution, expression, PARAMS)
+
+        self.run_cases(cases, check)
 
     def test_resolution_rejects_missing_command_binding(self):
         from app.registry import COMMANDS

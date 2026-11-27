@@ -142,7 +142,6 @@ class TestSuite(unittest.TestCase):
         with self.assertRaises(ValueError):
             operation(*args, **kwargs)
 
-
     def run_cases(self, rows, check):
         """Run explicitly named rows independently, reporting failures via subTest."""
         rows = tuple(rows)

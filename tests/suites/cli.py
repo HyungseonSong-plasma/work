@@ -40,7 +40,6 @@ class CliContract(TestSuite):
 
         self.run_cases(cases, check)
 
-
     def test_cli_rejects_unknown_commands(self):
         cases = (
             ("removed_task", ["task", "pr_merge.py"]),
@@ -82,19 +81,23 @@ class CliContract(TestSuite):
             register("invalid")(object)
         self.assertNotIn("invalid", COMMANDS)
 
-
     def test_test_command_exit_status(self):
-        for successful, expected in ((True, 0), (False, 1)):
-            with self.subTest(successful=successful):
-                with patch("tests.registry.build_suite") as build, \
-                        patch("app.commands.test.unittest.TextTestRunner") as runner:
-                    result = Mock()
-                    result.wasSuccessful.return_value = successful
-                    runner.return_value.run.return_value = result
-                    self.assertEqual(cli.main(["test"]), expected)
-                    build.assert_called_once_with()
-                    runner.return_value.run.assert_called_once_with(build.return_value)
+        cases = (
+            ("success", True, 0),
+            ("failure", False, 1),
+        )
 
+        def check(ctx, successful, expected):
+            with patch("tests.registry.build_suite") as build, \
+                    patch("app.commands.test.unittest.TextTestRunner") as runner:
+                result = Mock()
+                result.wasSuccessful.return_value = successful
+                runner.return_value.run.return_value = result
+                self.assertEqual(cli.main(["test"]), expected)
+                build.assert_called_once_with()
+                runner.return_value.run.assert_called_once_with(build.return_value)
+
+        self.run_cases(cases, check)
 
     def test_workflow_projection_exact(self):
         self.assertEqual(workflow_commands(), {
@@ -117,11 +120,18 @@ class CliContract(TestSuite):
 
     def test_no_argument_commands_delegate_to_module_execute(self):
         from app.commands import trigger, merge, test
-        for name, module in (("trigger", trigger), ("merge", merge), ("test", test)):
-            with self.subTest(command=name):
-                with patch.object(module, "execute", return_value=0) as run:
-                    self.assertEqual(cli.main([name]), 0)
-                    run.assert_called_once_with()
+        cases = (
+            ("trigger", "trigger", trigger),
+            ("merge", "merge", merge),
+            ("test", "test", test),
+        )
+
+        def check(ctx, name, module):
+            with patch.object(module, "execute", return_value=0) as run:
+                self.assertEqual(cli.main([name]), 0)
+                run.assert_called_once_with()
+
+        self.run_cases(cases, check)
 
     def test_delete_command_delegates_to_module_execute(self):
         from app.commands import delete
