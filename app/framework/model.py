@@ -2,12 +2,12 @@
 """Common framework for explicitly registered application commands."""
 
 from dataclasses import dataclass
-from inspect import signature
 import json
 import os
 import re
 from pathlib import Path
 
+from libs.frame import validate_callback, validate_overrides, validate_unique
 from github.framework.transport import github_api
 from github.framework.model import require_default_ref, parse_execute_comment, validate_pr_number
 
@@ -32,12 +32,8 @@ class CommandPlan:
 
 
 def _validate_callback(callback, arity):
-    try:
-        if not callable(callback):
-            raise TypeError("Not callable.")
-        signature(callback).bind(*([None] * arity))
-    except (TypeError, ValueError) as error:
-        raise TypeError("Invalid command lifecycle callback.") from error
+    validate_callback(callback, arity, error_type=TypeError,
+                      message="Invalid command lifecycle callback.")
 
 
 def _identity(ctx, args):
@@ -88,9 +84,8 @@ def validate_command(command):
     """Reject alternate registered execution entrypoints and malformed plans."""
     if not isinstance(command, type) or not issubclass(command, Command):
         raise TypeError("Command must extend Command model.")
-    for name in ("bind", "execute"):
-        if getattr(getattr(command, name), "__func__", None) is not getattr(Command, name).__func__:
-            raise TypeError(f"Command may not override framework {name}.")
+    validate_overrides(command, Command, ("bind", "execute"), error_type=TypeError,
+                       message="Command may not override framework {name}.", classmethods=True)
     _validate_callback(command.configure, 1)
     if not isinstance(command.help, str) or not command.help:
         raise TypeError("Command requires a help string.")
@@ -104,8 +99,7 @@ def validate_command(command):
                 or type(row[1]) is not CommandPlan for row in targets):
             raise TypeError("Invalid targeted command plans.")
         names = [name for name, _ in targets]
-        if len(names) != len(set(names)):
-            raise TypeError("Duplicate command target.")
+        validate_unique(names, "Duplicate command target.", error_type=TypeError)
     elif type(command.plan) is not CommandPlan:
         raise TypeError("Command requires a lifecycle plan.")
 

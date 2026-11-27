@@ -1,14 +1,14 @@
 # FileRank: C
 """Explicit ordered GitHub workflow routes."""
 
-
+from libs.frame import Registry, validate_unique
 
 
 class WorkflowRegistry:
     """Map exact, ordered execution chains to explicitly registered workflows."""
 
     def __init__(self):
-        self._routes = {}
+        self._routes = Registry()
 
     @staticmethod
     def _key(execution):
@@ -17,26 +17,25 @@ class WorkflowRegistry:
         key = tuple(execution)
         if not key or any(not isinstance(name, str) or not name for name in key):
             raise ValueError("Expected a nonempty execution chain.")
-        if len(key) != len(set(key)):
-            raise ValueError("Duplicate scripts in workflow route.")
+        validate_unique(key, "Duplicate scripts in workflow route.")
         return key
 
     def register(self, execution, workflow):
         key = self._key(execution)
-        if key in self._routes:
-            raise ValueError("Duplicate workflow route.")
+        self._routes.add(key, workflow, duplicate="Duplicate workflow route.",
+                         validate=self._validate_workflow)
+
+    @staticmethod
+    def _validate_workflow(workflow):
         if (not isinstance(workflow, str) or
                 not workflow.endswith((".yml", ".yaml")) or
                 "/" in workflow or "\\" in workflow or
                 not workflow.rsplit(".", 1)[0].replace("_", "").replace("-", "").isalnum()):
             raise ValueError("Expected a workflow filename.")
-        self._routes[key] = workflow
 
     def resolve(self, execution):
         key = self._key(execution)
-        if key not in self._routes:
-            raise ValueError("Unregistered workflow route.")
-        return self._routes[key]
+        return self._routes.resolve(key, unknown="Unregistered workflow route.")
 
 
     @classmethod

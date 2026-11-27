@@ -7,6 +7,7 @@ import textwrap
 import unittest
 
 from tests.framework.model import TestSuite
+from libs.frame import validate_overrides
 
 
 RUNNERS = frozenset(("run_cases", "run_contract", "run_scenario"))
@@ -136,11 +137,12 @@ def validate_suite(case):
     """Check actual loaded methods and prohibit replacing framework lifecycle."""
     if not isinstance(case, type) or not issubclass(case, TestSuite):
         raise ValueError("Expected TestSuite implementation.")
-    for name in (*RUNNERS, "run", "__call__", "setUp", "tearDown", "_callSetUp",
-                 "_callTestMethod", "_callTearDown", "_callCleanup", "doCleanups",
-                 "_validate_callbacks", "_validate_arity"):
-        if getattr(case, name) is not getattr(TestSuite, name):
-            raise ValueError(f"{case.__name__}: framework lifecycle override: {name}")
+    validate_overrides(case, TestSuite,
+                       (*RUNNERS, "run", "__call__", "setUp", "tearDown", "_callSetUp",
+                        "_callTestMethod", "_callTearDown", "_callCleanup", "doCleanups",
+                        "_validate_callbacks", "_validate_arity"),
+                       error_type=ValueError,
+                       message=case.__name__ + ": framework lifecycle override: {name}")
     names = unittest.defaultTestLoader.getTestCaseNames(case)
     for name in names:
         try:

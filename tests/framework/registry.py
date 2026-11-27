@@ -7,22 +7,23 @@ import unittest
 from tests.framework.validation import validate_suite
 
 from config import load_names
+from libs.frame import Registry, select_registered, validate_unique
 
-SUITES = {}
+SUITES = Registry()
 
 
 def register(name):
     def decorator(case):
         if not isinstance(name, str) or not name:
             raise ValueError("Invalid suite name.")
-        if name in SUITES:
-            raise ValueError(f"Duplicate test suite: {name}")
-        from tests.framework.model import TestSuite
+        def validate(value):
+            from tests.framework.model import TestSuite
 
-        if not isinstance(case, type) or not issubclass(case, TestSuite):
-            raise TypeError("Suite must extend TestSuite model.")
-        SUITES[name] = case
-        return case
+            if not isinstance(value, type) or not issubclass(value, TestSuite):
+                raise TypeError("Suite must extend TestSuite model.")
+
+        return SUITES.add(name, case, duplicate=f"Duplicate test suite: {name}",
+                          validate=validate)
     return decorator
 
 
@@ -31,15 +32,16 @@ def build_suite(loader=None, names=None, registered=None):
     loader = unittest.defaultTestLoader if loader is None else loader
     names = load_names("tests") if names is None else tuple(names)
     registered = SUITES if registered is None else registered
-    if not names or len(names) != len(set(names)):
+    if not names:
         raise ValueError("Missing or duplicate test suites.")
-    if set(names) != set(registered):
-        raise ValueError("Test manifest and registered suites do not match.")
+    validate_unique(names, "Missing or duplicate test suites.")
+    selected = select_registered(registered, names,
+                                 unknown="Test manifest and registered suites do not match.",
+                                 complete=True)
     suite = unittest.TestSuite()
-    for name in names:
-        case = registered[name]
+    for name, case in selected.items():
         # One explicitly identified framework self-test class, not a module-wide bypass.
-        module = sys.modules.get("tests.framework_tests.registry_contract")
+        module = sys.modules.get("tests.suites.registry_contract")
         framework_test = (name == "registry" and module is not None
                           and case is getattr(module, "RegistryContract", None))
         expected = (tuple(unittest.defaultTestLoader.getTestCaseNames(case))
