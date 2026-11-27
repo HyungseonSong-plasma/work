@@ -2,13 +2,15 @@
 """Offline deletion policy and target dispatch tests."""
 
 from copy import deepcopy
+import json
 from unittest.mock import Mock, patch
 
 from app.commands.delete import validate_actions_context
 from github import delete as deletion
 from github.model import delete_resource
 from tests.registry import register
-from tests.suites.model import TestSuite, REPO, REF, SHA
+from tests.suites.model import TestSuite, REPO, REF, SHA, event
+from github import trigger
 
 
 @register("deletion")
@@ -104,3 +106,63 @@ class DeletionContract(TestSuite):
             request.assert_called_once_with("DELETE", "repos/example/work/actions/runs/12")
             response.status = 200
             self.assert_rejected(delete_resource, "repos/example/work/actions/runs/12", send=send)
+
+
+    def test_owner_comment_routes_actions_only(self):
+        request = event("pr_merge.py")
+        request["comment"].update(created_at="now", updated_at="now")
+        request["comment"]["body"] = "/execute " + json.dumps({
+            "execution": "delete actions", "run_id": 12,
+            "expected_head_sha": SHA, "expected_run_attempt": 1})
+        dispatch = Mock()
+        workflow, request_id = trigger.dispatch_request(request, REPO, REF, dispatch)
+        self.assertEqual((workflow, request_id), ("actions_delete.yml", "comment-12"))
+        dispatch.assert_called_once_with(REPO, workflow, {
+            "ref": "main", "inputs": {"run_id": "12", "expected_head_sha": SHA,
+                "expected_run_attempt": "1", "source_pr": "7", "request_id": "comment-12"}})
+
+    def test_actions_comment_rejects_invalid_requests(self):
+        for changes in ({"run_id": True}, {"queue_comment_id": 1},
+                        {"expected_run_attempt": 0}, {"expected_head_sha": "bad"}):
+            request = event("pr_merge.py")
+            request["comment"].update(created_at="now", updated_at="now")
+            body = {"execution": "delete actions", "run_id": 12,
+                    "expected_head_sha": SHA, "expected_run_attempt": 1}
+            request["comment"]["body"] = "/execute " + json.dumps(dict(body, **changes))
+            dispatch = Mock()
+            self.assert_rejected(trigger.dispatch_request, request, REPO, REF, dispatch)
+            dispatch.assert_not_called()
+
+    def test_actions_worker_revalidates_source_comment(self):
+        context = {"repository": {"full_name": REPO, "default_branch": "main",
+                                   "owner": {"id": 1}},
+                   "sender": {"id": 41898282, "login": "github-actions[bot]"}}
+        inputs = {"run_id": "12", "expected_head_sha": SHA, "expected_run_attempt": "1"}
+        body = {"execution": "delete actions", "run_id": 12,
+                "expected_head_sha": SHA, "expected_run_attempt": 1}
+        comment = {"id": 12, "user": {"id": 1}, "author_association": "OWNER",
+                   "created_at": "now", "updated_at": "now",
+                   "issue_url": f"https://api.github.com/repos/{REPO}/issues/7",
+                   "body": "/execute " + json.dumps(body)}
+        pr = {"number": 7, "base": {"repo": {"full_name": REPO}}}
+        workflow_ref = f"{REPO}/.github/workflows/actions_delete.yml@{REF}"
+        def validate():
+            validate_actions_context(context, REPO, REF, "41898282", workflow_ref,
+                                     "comment-12", "7", inputs,
+                                     api=Mock(side_effect=[comment, pr]))
+        validate()
+        for change in ({"updated_at": "later"}, {"user": {"id": 2}},
+                       {"body": "/execute " + json.dumps(dict(body, run_id=99))}):
+            with self.subTest(change=change):
+                original = dict(comment)
+                comment.update(change)
+                self.assert_rejected(validate)
+                comment.clear()
+                comment.update(original)
+
+    def test_actions_worker_rejects_bot_without_approval(self):
+        context = {"repository": {"full_name": REPO, "default_branch": "main",
+                                   "owner": {"id": 1}},
+                   "sender": {"id": 41898282, "login": "github-actions[bot]"}}
+        self.assert_rejected(validate_actions_context, context, REPO, REF, "41898282",
+                             f"{REPO}/.github/workflows/actions_delete.yml@{REF}")
