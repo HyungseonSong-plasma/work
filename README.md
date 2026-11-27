@@ -49,11 +49,11 @@ python3 -m app execute --serial-stage 2
 python3 -m app test
 ```
 
-These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered tasks as isolated `python3 -m app task <script>` subprocesses, with a fixed allowlist and fail-fast exit handling. Task is a low-level command; for workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
+These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered commands as isolated `python3 -m app merge` or `python3 -m app delete branch` subprocesses, with a fixed allowlist and fail-fast exit handling. `app/commands/model.py` provides the common command binding, event validation, PR context and result reporting; `app/registry.py` projects its single registry onto the exact execution allowlist. The former `task.py` and `TASKS` registry are removed. For workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
 
 ### Adding CLI commands
 
-`app/cli.py` is a generic parser and dispatcher. To add a command, define a subclass of `Command` from `app/commands/model.py` in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.toml`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
+`app/cli.py` is a generic parser and dispatcher. To add a command, define a subclass of `Command` from `app/commands/model.py` in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.toml`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. Only commands with an explicit `workflow_execution` tuple can be selected by the restricted workflow allowlist. Unknown, duplicate or missing execution bindings fail closed. CLI registration alone grants no workflow eligibility.
 
 Run offline regression tests with `python3 -m app test`.
 
@@ -77,7 +77,7 @@ The offline test suite uses `config/tests.toml` as its ordered manifest. Each `t
 
 Verify the TOML serial route with a documentation-only PR on the post-migration default branch; confirm both job conclusions and actual branch removal.
 
-The command model supplies the default argument configuration, abstract execute contract and shared summary reporting. Registries remain responsible for explicit registration, manifest loading and validation, not implementation details.
+The command model supplies default argument configuration, abstract execute contract, parser binding, event validation, repository and PR context and shared result reporting. Registries remain responsible for explicit registration, manifest loading and validation, not implementation details.
 
 ### GitHub deletion framework
 
@@ -88,3 +88,5 @@ Actions Run deletion is available through an owner-authored PR comment or manual
 After changing the shared deletion framework, verify the legacy branch execution marker still dispatches to the registered GitHub branch handler in a post-change serial run.
 
 Batch comment: `/execute {"execution":"delete actions","runs":[{"run_id":123,"expected_head_sha":"<full SHA>","expected_run_attempt":1}]}`. The original single-run format remains supported. Never use implicit selectors. Only one deletion workflow may execute at a time; GitHub may replace pending concurrency-group runs, so submit one batch at a time.
+
+The approved external execution IDs `pr_merge.py` and `branch_delete.py` remain unchanged, as do workflow YAML, permissions, comment syntax and the Controller queue allowlist. Branch and Actions deletion share DeleteCommand but keep independent authorization and target validation; only branch deletion is eligible for PR execution chains.

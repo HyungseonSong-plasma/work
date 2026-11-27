@@ -35,3 +35,23 @@ def configured_commands():
     if any(name not in COMMANDS for name in names):
         raise ValueError("Unknown configured command.")
     return {name: COMMANDS[name] for name in names}
+
+
+def workflow_commands():
+    """Project the same command registry onto the restricted execution allowlist."""
+    allowed = set(load_names("executions"))
+    routes = {}
+    for name, command in configured_commands().items():
+        execution = command.workflow_execution
+        if not isinstance(execution, tuple) or any(
+                not isinstance(value, str) or not value for value in execution):
+            raise ValueError("Invalid command execution binding.")
+        if not execution:
+            continue
+        identifier, *arguments = execution
+        if identifier not in allowed or identifier in routes:
+            raise ValueError("Unknown or duplicate command execution binding.")
+        routes[identifier] = (name, *arguments)
+    if set(routes) != allowed:
+        raise ValueError("Missing registered command execution binding.")
+    return routes

@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 from app import cli
 from app.commands import execute as execute_command
-from app.registry import COMMANDS, register
+from app.registry import COMMANDS, register, workflow_commands
 from app.commands.model import Command
 from tests.suites.model import TestSuite, ROOT
 from tests.registry import register as register_suite
@@ -33,9 +33,9 @@ class CliContract(TestSuite):
             self.assertEqual(cli.main(["execute", "--serial-stage", "2"]), 0)
             call.assert_called_once_with(False, 2)
 
-    def test_reject_unknown_task(self):
+    def test_removed_task_command(self):
         with self.assertRaises(SystemExit) as error:
-            cli.main(["task", "unregistered.py"])
+            cli.main(["task", "pr_merge.py"])
         self.assertEqual(error.exception.code, 2)
 
     def test_registered_command_extends_cli_without_branch(self):
@@ -88,3 +88,18 @@ class CliContract(TestSuite):
         result = subprocess.run([sys.executable, "-m", "app", "test", "--help"],
                                 cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+
+    def test_workflow_projection_exact(self):
+        self.assertEqual(workflow_commands(), {
+            "pr_merge.py": ("merge",),
+            "branch_delete.py": ("delete", "branch"),
+        })
+
+    def test_workflow_projection_rejects_missing_or_duplicate(self):
+        with patch.object(COMMANDS["merge"], "workflow_execution", ()):
+            self.assert_rejected(workflow_commands)
+        with patch.object(COMMANDS["delete"], "workflow_execution", ("pr_merge.py",)):
+            self.assert_rejected(workflow_commands)
+        with patch.object(COMMANDS["test"], "workflow_execution", ("test.py",)):
+            self.assert_rejected(workflow_commands)
