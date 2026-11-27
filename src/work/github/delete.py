@@ -3,8 +3,8 @@
 
 from urllib.parse import quote
 
-from config import require_deletion
-from github.actions import delete_actions_batch, delete_actions_run
+from work.config import require_deletion
+from work.github.actions import delete_actions_batch, delete_actions_run
 from work.libs.github import review_repository, matches_pr_head
 from work.libs.github import git_session
 

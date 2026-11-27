@@ -6,10 +6,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "work-framework"
 version = "0.1.0.dev0"
-description = "Explicit registries and regulated Python execution and test lifecycles."
+description = "Explicit registries, regulated lifecycles and GitHub application operations."
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+work = "work.app.cli:main"
+
 [tool.setuptools]
-packages = ["work", "work.libs"]
+package-dir = {"" = "src"}
+packages = ["work", "work.libs", "work.app", "work.app.commands", "work.github", "work.config"]
 include-package-data = false
+
+[tool.setuptools.package-data]
+"work.config" = ["actions_policy.toml", "commands.toml", "deletions.toml", "executions.toml", "tests.toml", "workflows.toml"]

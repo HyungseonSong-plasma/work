@@ -3,11 +3,11 @@
 
 from functools import partial
 
-from config import load_registry
-from app.wiring import register, execution_ids, resolve_execution
+from work.config import load_registry
+from work.app.wiring import register, execution_ids, resolve_execution
 from work.libs.command import Command
 from work.libs.workflow import workflow_plan
-from github import trigger
+from work.github import trigger
 from work.libs.github import WorkflowRegistry
 
 

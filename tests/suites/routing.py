@@ -4,9 +4,9 @@
 from contextlib import nullcontext
 from unittest.mock import Mock, MagicMock, patch
 
-from github import trigger
-from app.commands.trigger import route_registry
-from app.wiring import resolve_execution
+from work.github import trigger
+from work.app.commands.trigger import route_registry
+from work.app.wiring import resolve_execution
 from work.libs.github import WorkflowRegistry
 from work.libs.testing import TestSuite
 from tests.fixtures import WorkflowTestContext, REPO, REF
@@ -257,8 +257,8 @@ class RoutingContract(TestSuite):
     def test_domain_imports_without_application_layer(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("work.libs.github", "github.trigger", "github.actions", "github.delete", "github.merge"),
-                                  ("app",))
+            result = import_probe(("work.libs.github", "work.github.trigger", "work.github.actions", "work.github.delete", "work.github.merge"),
+                                  ("work.app",))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)
@@ -328,7 +328,7 @@ class RoutingContract(TestSuite):
         def check(ctx):
             from tests.fixtures import import_probe
             result = import_probe(("work.libs.github",),
-                                  ("app", "tests", "github", "config"))
+                                  ("work.app", "tests", "work.github", "work.config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)

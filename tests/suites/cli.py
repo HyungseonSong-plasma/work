@@ -5,9 +5,9 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from app import cli
-from app.commands import execute as execute_command
-from app.wiring import COMMANDS, register, workflow_commands
+from work.app import cli
+from work.app.commands import execute as execute_command
+from work.app.wiring import COMMANDS, register, workflow_commands
 from work.libs.command import Command, CommandPlan, local_plan
 from work.libs.testing import TestSuite
 from tests.fixtures import TestContext
@@ -80,7 +80,7 @@ class CliContract(TestSuite):
 
                     plan = local_plan(lambda ctx, args: args.value)
 
-                with patch("app.wiring.load_names", return_value=("sample",)):
+                with patch("work.app.wiring.load_names", return_value=("sample",)):
                     self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
 
         self.run_contract(check=check)
@@ -115,7 +115,7 @@ class CliContract(TestSuite):
 
         def check(ctx, successful, expected):
             with patch("tests.wiring.build_suite") as build, \
-                    patch("app.commands.test.unittest.TextTestRunner") as runner:
+                    patch("work.app.commands.test.unittest.TextTestRunner") as runner:
                 result = Mock()
                 result.wasSuccessful.return_value = successful
                 runner.return_value.run.return_value = result
@@ -148,7 +148,7 @@ class CliContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_no_argument_commands_delegate_to_module_execute(self):
-        from app.commands import trigger, merge, test
+        from work.app.commands import trigger, merge, test
         cases = (
             ("trigger", "trigger", trigger.TriggerCommand),
             ("merge", "merge", merge.MergeCommand),
@@ -177,7 +177,7 @@ class CliContract(TestSuite):
 
     def test_delete_command_delegates_to_module_execute(self):
         def check(ctx):
-            from app.commands.delete import DeleteCommand
+            from work.app.commands.delete import DeleteCommand
             prepared, validated = object(), object()
             prepare, validate, action, report = (
                 Mock(return_value=prepared), Mock(return_value=validated),
@@ -268,7 +268,7 @@ class CliContract(TestSuite):
 
             with patch.dict(COMMANDS):
                 register("sample")(Sample)
-                with patch("app.wiring.load_names", return_value=("sample",)):
+                with patch("work.app.wiring.load_names", return_value=("sample",)):
                     with self.assertRaises(TypeError):
                         cli.main(["sample"])
             action.assert_not_called()
@@ -280,7 +280,7 @@ class CliContract(TestSuite):
         def check(ctx):
             from tests.fixtures import import_probe
             result = import_probe(("work.libs.command",),
-                                  ("app", "tests", "github", "config"))
+                                  ("work.app", "tests", "work.github", "work.config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)

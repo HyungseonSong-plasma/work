@@ -2,9 +2,9 @@
 """Merge an explicitly reviewed PR through the shared command model."""
 
 from work.libs.command import Command
-from app.wiring import register, pr_plan
+from work.app.wiring import register, pr_plan
 from work.libs.github import CLIENT
-from github import merge
+from work.github import merge
 
 
 def action(ctx, args):

@@ -31,5 +31,6 @@ jobs:
           persist-credentials: false
       - name: Validate and dispatch one workflow
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           GH_TOKEN: ${{ github.token }}
-        run: python3 -m app trigger
+        run: python3 -P -m work trigger

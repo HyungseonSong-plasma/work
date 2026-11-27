@@ -5,7 +5,7 @@ import json
 import re
 from functools import partial
 
-from config import load_names
+from work.config import load_names
 from work.libs.command import CommandRegistry
 from work.libs.workflow import (context_plan, pr_plan as workflow_pr_plan,
                            require_execution_membership)
@@ -21,7 +21,7 @@ def configured_commands():
 
 def workflow_commands():
     """Project the same command registry onto the restricted execution allowlist."""
-    from app import commands  # Explicit trusted registrations, loaded before use.
+    from work.app import commands  # Explicit trusted registrations, loaded before use.
 
     allowed = execution_ids()
     routes = {}
@@ -73,7 +73,7 @@ pr_plan = partial(workflow_pr_plan, resolve=resolve_execution)
 def actions_plan(action):
     """Connect the dedicated Actions approval context to the command lifecycle."""
     def prepare(args):
-        from github.actions import ActionsContext
+        from work.github.actions import ActionsContext
         return ActionsContext(args)
 
     return context_plan(prepare, action)

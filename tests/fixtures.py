@@ -32,7 +32,7 @@ class TestContext:
     """Fresh per-test context; no production policy or registry-derived expectations."""
 
     def cli_help(self, *args):
-        return subprocess.run([sys.executable, "-m", "app", *args, "--help"],
+        return subprocess.run([sys.executable, "-m", "work", *args, "--help"],
                               cwd=ROOT, capture_output=True, text=True)
 
     def process(self, returncode=0):
@@ -111,7 +111,7 @@ class ActionsTestContext(WorkflowTestContext):
     def validate_context(self, event, repository, ref, actor_id, workflow_ref,
                          request_id="", source_pr="", inputs=None, api=None):
         # The production context is the system under test, never the source of fixtures.
-        from github.actions import ActionsContext
+        from work.github.actions import ActionsContext
 
         inputs = ({"run_id": "12", "expected_head_sha": SHA,
                    "expected_run_attempt": "1"} if inputs is None else inputs)
@@ -140,5 +140,5 @@ class ConfigurationTestContext(TestContext):
             root = Path(directory)
             for name, content in (files or {}).items():
                 (root / name).write_text(content, encoding="utf-8")
-            with patch("config.ROOT", root):
+            with patch("work.config.ROOT", root):
                 yield root

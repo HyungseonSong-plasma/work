@@ -95,7 +95,7 @@ class RegistryContract(TestSuite):
         self.assertEqual(ctx.event("pr_merge.py")["sender"]["id"], 1)
 
     def test_configuration_context_cleans_up_on_error(self):
-        import config
+        import work.config as config
         from tests.fixtures import ConfigurationTestContext
         original = config.ROOT
         with self.assertRaises(RuntimeError):
@@ -553,7 +553,7 @@ class RegistryContract(TestSuite):
     def test_shared_frame_import_is_domain_independent(self):
         from tests.fixtures import import_probe
         result = import_probe(("work.libs.frame",),
-                              ("app", "tests", "github", "config"))
+                              ("work.app", "tests", "work.github", "work.config"))
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_frame_contract_rejects_invalid_declarations(self):
@@ -627,7 +627,7 @@ class RegistryContract(TestSuite):
     def test_testing_library_import_is_domain_independent(self):
         from tests.fixtures import import_probe, ROOT
         result = import_probe(("work.libs.testing",),
-                              ("app", "tests", "github", "config"))
+                              ("work.app", "tests", "work.github", "work.config"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((ROOT / "tests" / "framework").exists())
 

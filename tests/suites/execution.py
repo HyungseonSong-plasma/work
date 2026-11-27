@@ -6,9 +6,9 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
-from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
+from work.app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from work.libs.workflow import Context, PRContext
-from app.wiring import resolve_execution
+from work.app.wiring import resolve_execution
 from work.libs.testing import TestSuite
 from tests.fixtures import WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
 from tests.wiring import register
@@ -47,7 +47,7 @@ class ExecutionContract(TestSuite):
                       else execute_command.run_stage(executions, stage, run=run))
             self.assertEqual(result, exit_code)
             run.assert_called_once_with(
-                [sys.executable, "-m", "app", *expected], cwd=ROOT, check=False)
+                [sys.executable, "-E", "-s", "-m", "work", *expected], cwd=ROOT / "src", check=False)
 
         self.run_cases(cases, check)
 
@@ -109,11 +109,11 @@ class ExecutionContract(TestSuite):
         self.run_contract(act, check, arrange=arrange)
 
     def test_branch_disabled_blocks_before_api(self):
-        from github.delete import delete_branch
+        from work.github.delete import delete_branch
 
         def arrange(ctx):
             ctx.api, ctx.git = Mock(), Mock()
-            return patch("config.load_registry", return_value={
+            return patch("work.config.load_registry", return_value={
                 "branch": {"enabled": False, "permission": "contents: write"}})
 
         def act(ctx):
@@ -127,7 +127,7 @@ class ExecutionContract(TestSuite):
 
     def test_branch_adapter_uses_shared_context(self):
         def check(ctx):
-            from app import cli
+            from work.app import cli
             with ctx.patched_environment():
                 with patch.object(delete_command, "delete", return_value="Deleted branch") as call:
                     self.assertEqual(cli.main(["delete", "branch"]), 0)
@@ -139,7 +139,7 @@ class ExecutionContract(TestSuite):
 
     def test_branch_rejects_actions_arguments(self):
         def check(ctx):
-            from app import cli
+            from work.app import cli
             with patch.object(delete_command, "delete") as call:
                 self.assertEqual(cli.main(["delete", "branch", "--run-id", "12"]), 1)
                 call.assert_not_called()
@@ -219,7 +219,7 @@ class ExecutionContract(TestSuite):
 
     def test_resolution_rejects_missing_command_binding(self):
         def check(ctx):
-            from app.wiring import COMMANDS
+            from work.app.wiring import COMMANDS
             with patch.object(COMMANDS["merge"], "workflow_execution", ()):
                 self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)
 
@@ -240,8 +240,8 @@ class ExecutionContract(TestSuite):
         )
 
         def check(ctx, name, args, changes):
-            from app import cli
-            from app.commands import trigger as trigger_command
+            from work.app import cli
+            from work.app.commands import trigger as trigger_command
             with ctx.patched_environment(EXECUTION="pr_merge.py", **changes):
                 with patch.object(trigger_command, "dispatch_request") as dispatch, \
                         patch.object(execute_command, "run_execution") as run, \
@@ -255,8 +255,8 @@ class ExecutionContract(TestSuite):
 
     def test_trigger_reports_exact_dispatch(self):
         def check(ctx):
-            from app.commands import trigger as trigger_command
-            from app import cli
+            from work.app.commands import trigger as trigger_command
+            from work.app import cli
             from work.libs.workflow import Context
             event = ctx.event("pr_merge.py")
             with ctx.patched_environment(GITHUB_EVENT_NAME="issue_comment"):
@@ -280,7 +280,7 @@ class ExecutionContract(TestSuite):
                   "pr_merge.py - branch_delete.py", 2, 7))
 
         def check(ctx, args, expression, stage, expected):
-            from app import cli
+            from work.app import cli
             with ctx.patched_environment(EXECUTION=expression):
                 with patch.object(execute_command, "run_execution", return_value=expected) as run, \
                         patch.object(execute_command, "run_stage", return_value=expected) as serial:
@@ -296,7 +296,7 @@ class ExecutionContract(TestSuite):
 
     def test_merge_domain_exact_review_and_guarded_put(self):
         def check(ctx):
-            from github.merge import MERGE, MergeOperation
+            from work.github.merge import MERGE, MergeOperation
             root = "repos/example/work"
             endpoint = root + "/pulls/7"
             api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(),
@@ -314,7 +314,7 @@ class ExecutionContract(TestSuite):
                  ("uppercase_sha", 7, "A" * 40))
         # Each row supplies exactly the same independent reviewed input contract.
         def check(ctx, number, sha):
-            from github.merge import MERGE, MergeOperation
+            from work.github.merge import MERGE, MergeOperation
             api = Mock()
             self.assert_rejected(MERGE.execute, MergeOperation(api, REPO, REF, number, sha))
             api.assert_not_called()
@@ -333,7 +333,7 @@ class ExecutionContract(TestSuite):
         )
 
         def check(ctx, ref, changes):
-            from github.merge import MERGE, MergeOperation
+            from work.github.merge import MERGE, MergeOperation
             pr = ctx.pull_request()
             pr.update(changes)
             api = Mock(side_effect=[{"default_branch": "main"}, pr])
@@ -352,7 +352,7 @@ class ExecutionContract(TestSuite):
                  ("missing_sha", {"merged": True}))
 
         def check(ctx, response):
-            from github.merge import MERGE, MergeOperation
+            from work.github.merge import MERGE, MergeOperation
             root = "repos/example/work"
             api = Mock(side_effect=[{"default_branch": "main"}, ctx.pull_request(), response])
             self.assert_rejected(MERGE.execute, MergeOperation(api, REPO, REF, "7", SHA))
@@ -418,7 +418,7 @@ class ExecutionContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_merge_operation_does_not_reuse_review_state(self):
-        from github.merge import MERGE, MergeOperation
+        from work.github.merge import MERGE, MergeOperation
         from dataclasses import FrozenInstanceError
 
         def reviewed_merge(ctx):
@@ -452,9 +452,9 @@ class ExecutionContract(TestSuite):
         def check(ctx):
             from tests.fixtures import import_probe
             result = import_probe(("work.libs.workflow",),
-                                  ("app", "tests", "github", "config"))
+                                  ("work.app", "tests", "work.github", "work.config"))
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse((ROOT / "app" / "framework").exists())
+            self.assertFalse((ROOT / "src" / "work" / "app" / "framework").exists())
 
         self.run_contract(check=check)
 

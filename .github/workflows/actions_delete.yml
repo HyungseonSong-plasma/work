@@ -58,6 +58,7 @@ jobs:
           persist-credentials: false
       - name: Delete reviewed completed runs
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           GH_TOKEN: ${{ github.token }}
           TARGET_RUN_ID: ${{ inputs.run_id }}
           TARGET_HEAD_SHA: ${{ inputs.expected_head_sha }}
@@ -71,7 +72,7 @@ jobs:
               echo "Single and batch inputs cannot be combined"
               exit 1
             fi
-            python3 -m app delete actions --runs "$TARGET_RUNS" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
+            python3 -P -m work delete actions --runs "$TARGET_RUNS" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
           else
-            python3 -m app delete actions --run-id "$TARGET_RUN_ID" --expected-head-sha "$TARGET_HEAD_SHA" --expected-run-attempt "$TARGET_RUN_ATTEMPT" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
+            python3 -P -m work delete actions --run-id "$TARGET_RUN_ID" --expected-head-sha "$TARGET_HEAD_SHA" --expected-run-attempt "$TARGET_RUN_ATTEMPT" --request-id "$REQUEST_ID" --source-pr "$SOURCE_PR"
           fi

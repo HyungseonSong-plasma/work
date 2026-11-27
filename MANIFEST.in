@@ -1,8 +1,8 @@
 # FileRank: C
 include pyproject.toml README.md MANIFEST.in
-prune app
-prune github
-prune config
+include src/work/config/actions_policy.toml src/work/config/commands.toml
+include src/work/config/deletions.toml src/work/config/executions.toml
+include src/work/config/tests.toml src/work/config/workflows.toml
 prune tests
 prune .github
 exclude .gitignore

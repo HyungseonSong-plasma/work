@@ -3,7 +3,7 @@
 
 import json
 
-from github.actions import actions_request
+from work.github.actions import actions_request
 from work.libs.github import (CLIENT, validate_sha, validate_pr_number, require_default_ref,
                          parse_execute_comment, is_unchanged_comment)
 
@@ -54,7 +54,7 @@ def _comment_parameters(event, request):
 
 
 def route_actions(event, default, request_id, request):
-    from config import require_deletion
+    from work.config import require_deletion
 
     require_deletion("actions")
     number = event["issue"]["number"]
