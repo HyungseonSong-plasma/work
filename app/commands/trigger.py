@@ -4,8 +4,9 @@
 from functools import partial
 
 from config import load_registry
-from app.framework.registry import register, execution_ids, resolve_execution
-from app.framework.model import Command, workflow_plan
+from app.wiring import register, execution_ids, resolve_execution
+from libs.command import Command
+from app.framework.model import workflow_plan
 from github import trigger
 from libs.github import WorkflowRegistry
 
@@ -30,4 +31,5 @@ def report(ctx, result):
 @register("trigger")
 class TriggerCommand(Command):
     help = "Validate a PR comment and route it"
+    workflow_execution = ()
     plan = workflow_plan("issue_comment", action, report=report)

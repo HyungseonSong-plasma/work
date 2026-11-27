@@ -1,36 +1,19 @@
 # FileRank: C
-"""Explicit registration for trusted CLI commands."""
+"""Trusted project wiring: command manifest and workflow execution allowlist."""
 
 import json
 import re
 
 from config import load_names
-from libs.frame import Registry, select_registered, validate_unique
+from libs.command import CommandRegistry
+from libs.frame import validate_unique
 
-COMMANDS = Registry()
-
-
-def register(name):
-    """Register one command with a validated lifecycle plan."""
-    def decorator(command):
-        from app.framework.model import validate_command
-
-        if not isinstance(name, str) or not name or name.startswith("-"):
-            raise ValueError("Invalid command name.")
-        return COMMANDS.add(name, command, duplicate=f"Duplicate command: {name}",
-                            validate=validate_command)
-    return decorator
+COMMANDS = CommandRegistry()
+register = COMMANDS.register
 
 
 def configured_commands():
-    """Select only explicitly registered implementations named in configuration."""
-    names = load_names("commands")
-    selected = select_registered(COMMANDS, names, unknown="Unknown configured command.")
-    from app.framework.model import validate_command
-
-    for command in selected.values():
-        validate_command(command)
-    return selected
+    return COMMANDS.configured(load_names("commands"))
 
 
 def workflow_commands():
@@ -40,7 +23,7 @@ def workflow_commands():
     allowed = execution_ids()
     routes = {}
     for name, command in configured_commands().items():
-        execution = command.workflow_execution
+        execution = getattr(command, "workflow_execution", ())
         if not isinstance(execution, tuple) or any(
                 not isinstance(value, str) or not value for value in execution):
             raise ValueError("Invalid command execution binding.")

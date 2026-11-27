@@ -5,8 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.framework.registry import register, resolve_execution, workflow_commands
-from app.framework.model import Command, workflow_plan
+from app.wiring import register, resolve_execution, workflow_commands
+from libs.command import Command
+from app.framework.model import workflow_plan
 
 
 def run_execution(executions, run=subprocess.run):
@@ -53,6 +54,7 @@ def action(executions, args):
 @register("execute")
 class ExecuteCommand(Command):
     help = "Run validated execution stages"
+    workflow_execution = ()
     plan = workflow_plan("workflow_dispatch", action, validate=validate, returns_status=True)
 
     @staticmethod

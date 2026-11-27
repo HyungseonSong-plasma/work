@@ -8,7 +8,7 @@ from unittest.mock import Mock, call, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
 from app.framework.model import Context, PRContext
-from app.framework.registry import resolve_execution
+from app.wiring import resolve_execution
 from tests.framework.model import TestSuite, WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
 from tests.framework.registry import register
 
@@ -161,7 +161,7 @@ class ExecutionContract(TestSuite):
 
     def test_resolution_rejects_missing_command_binding(self):
         def check(ctx):
-            from app.framework.registry import COMMANDS
+            from app.wiring import COMMANDS
             with patch.object(COMMANDS["merge"], "workflow_execution", ()):
                 self.assert_rejected(resolve_execution, "pr_merge.py", PARAMS)
 
