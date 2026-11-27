@@ -67,3 +67,5 @@ When verifying a workflow route change, confirm the Trigger and worker runs both
 ### Registry configuration
 
 The four C-rank JSON registries under `config/` define CLI command names, execution allowlists, ordered workflow routes and deletion availability. Code still binds explicitly imported implementations; JSON cannot import arbitrary modules, create workflow permissions or bypass validation. `config/deletions.json` enables only branch deletion; issue deletion is disabled because the default GITHUB_TOKEN returned FORBIDDEN in the disposable issue #15 probe. Actions Run deletion is also disabled until a dedicated target/permission contract and handler are implemented. The permission strings are documentation, not authorization. No changes to existing YAML or comment protocol are required.
+
+For JSON registry regression verification, confirm that the worker and Trigger use the same reviewed configuration commit and that the serial route is selected from `config/workflows.json`.
