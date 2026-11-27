@@ -5,13 +5,8 @@ import json
 import os
 import re
 import subprocess
-import sys
 import tempfile
-from pathlib import Path
-from urllib.error import HTTPError, URLError
 from urllib.parse import quote
-
-from github.model import github_api
 
 
 def parse_parameters(raw):
@@ -89,38 +84,20 @@ def delete_branch(api, git, repository, run_ref, number, sha, remote):
     return f"Deleted merged PR head: {branch}"
 
 
-def main():
-    try:
-        number, sha = parse_parameters(os.environ["EXECUTION_INPUTS"])
-        repository = os.environ["GITHUB_REPOSITORY"]
-        remote = os.environ["GITHUB_SERVER_URL"].rstrip("/") + f"/{repository}.git"
-        with tempfile.TemporaryDirectory() as directory:
-            subprocess.run(["git", "init", "-q", directory], check=True)
-            env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+def delete_with_git(api, repository, run_ref, number, sha, remote):
+    """Use an isolated Git repository and the scoped credential helper."""
+    with tempfile.TemporaryDirectory() as directory:
+        subprocess.run(["git", "init", "-q", directory], check=True)
+        env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
-            def git(*args, allowed=(0,)):
-                result = subprocess.run(
-                    ["git", "-C", directory, "-c", "credential.helper=",
-                     "-c", "credential.helper=!gh auth git-credential", *args],
-                    env=env, capture_output=True, text=True, timeout=60,
-                )
-                if result.returncode not in allowed:
-                    raise ValueError(f"Git {args[0]} failed (exit {result.returncode}).")
-                return result
-
-            result = delete_branch(
-                github_api, git, repository, os.environ["GITHUB_REF"],
-                number, sha, remote,
+        def git(*args, allowed=(0,)):
+            result = subprocess.run(
+                ["git", "-C", directory, "-c", "credential.helper=",
+                 "-c", "credential.helper=!gh auth git-credential", *args],
+                env=env, capture_output=True, text=True, timeout=60,
             )
-        print(result)
-        return 0
-    except HTTPError as error:
-        print(f"GitHub API request failed: HTTP {error.code}", file=sys.stderr)
-    except (URLError, ValueError, KeyError, TypeError, OSError,
-            subprocess.SubprocessError) as error:
-        print(f"Branch deletion could not be confirmed: {error}", file=sys.stderr)
-    return 1
+            if result.returncode not in allowed:
+                raise ValueError(f"Git {args[0]} failed (exit {result.returncode}).")
+            return result
 
-
-if __name__ == "__main__":
-    sys.exit(main())
+        return delete_branch(api, git, repository, run_ref, number, sha, remote)

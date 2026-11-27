@@ -36,4 +36,16 @@ Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submissio
 
 ### GitHub integration
 
-The repository-root `github/model.py` is the shared GitHub REST API transport and workflow dispatch module. Execution and routing policies remain in `scripts/`. Workflows set `PYTHONPATH` to the trusted repository workspace so direct script execution and its child processes can import `github.model`. For local direct script invocation from the repository root, use `PYTHONPATH=. python3 scripts/<script>.py` with the required environment variables.
+The repository-root `github/model.py` is the shared GitHub REST API transport and workflow dispatch module. Execution and routing policies remain in `scripts/`. The root `app/` package provides the only command-line entry point; `scripts/` contains importable task and routing functions. Workflows use `python3 -m app` from the trusted repository root, so no PYTHONPATH override is necessary.
+
+### Unified CLI
+
+```sh
+python3 -m app --help
+python3 -m app trigger
+python3 -m app execute --single
+python3 -m app execute --serial-stage 1
+python3 -m app execute --serial-stage 2
+```
+
+These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered tasks as isolated `python3 -m app task <script>` subprocesses, with a fixed allowlist and fail-fast exit handling. Task is a low-level command; for workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.

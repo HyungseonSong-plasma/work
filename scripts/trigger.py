@@ -1,13 +1,9 @@
 # FileRank: C
 """Route an authorized PR comment to one execution workflow; never execute it."""
 
-import json
-import os
-import sys
-from urllib.error import HTTPError, URLError
 from github.model import dispatch_workflow
 
-from execute import comment_request, resolve_execution
+from scripts.execute import comment_request, resolve_execution
 
 
 def route(event, repository, ref):
@@ -37,30 +33,8 @@ def route(event, repository, ref):
     }
 
 
-def main():
-    try:
-        if (os.environ["GITHUB_EVENT_NAME"] != "issue_comment" or
-                os.environ["GITHUB_RUN_ATTEMPT"] != "1"):
-            raise ValueError("Only a new comment event can dispatch a workflow.")
-        with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as stream:
-            event = json.load(stream)
-        repository = os.environ["GITHUB_REPOSITORY"]
-        workflow, payload = route(event, repository, os.environ["GITHUB_REF"])
-        dispatch_workflow(repository, workflow, payload)
-        print(f"Submitted {workflow}: {payload['inputs']['request_id']}")
-        summary = os.environ.get("GITHUB_STEP_SUMMARY")
-        if summary:
-            with open(summary, "a", encoding="utf-8") as stream:
-                stream.write(f"Submitted `{workflow}` for "
-                             f"`{payload['inputs']['request_id']}`.\n\n"
-                             "Execution result is reported by the dispatched run.\n")
-        return 0
-    except HTTPError as error:
-        print(f"Dispatch failed: HTTP {error.code}", file=sys.stderr)
-    except (URLError, ValueError, KeyError, TypeError, OSError) as error:
-        print(f"Dispatch not confirmed: {error}", file=sys.stderr)
-    return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+def dispatch_request(event, repository, ref, dispatch=dispatch_workflow):
+    """Validate and submit exactly one matching workflow."""
+    workflow, payload = route(event, repository, ref)
+    dispatch(repository, workflow, payload)
+    return workflow, payload["inputs"]["request_id"]

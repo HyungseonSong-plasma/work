@@ -2,7 +2,6 @@
 """Execute registered scripts serially from the trusted checkout."""
 
 import json
-import os
 import re
 import subprocess
 import sys
@@ -39,7 +38,10 @@ def run_execution(scripts, run=subprocess.run):
     """Run in input order; never start a later script after failure."""
     for script in scripts:
         print(f"Executing {script.name}", flush=True)
-        result = run([sys.executable, str(script)], check=False)
+        result = run(
+            [sys.executable, "-m", "app", "task", script.name],
+            cwd=Path(__file__).resolve().parents[1], check=False,
+        )
         if result.returncode != 0:
             print(f"Stopped at {script.name} (exit {result.returncode}).",
                   file=sys.stderr, flush=True)
@@ -93,39 +95,3 @@ def run_stage(scripts, stage, run=subprocess.run):
     if len(scripts) != 2 or stage not in (1, 2):
         raise ValueError("Serial execution requires exactly two scripts.")
     return run_execution([scripts[stage - 1]], run=run)
-
-
-
-def main():
-    try:
-        event_name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
-        if event_name == "issue_comment":
-            if os.environ.get("GITHUB_RUN_ATTEMPT") != "1":
-                raise ValueError("Create a new command instead of replaying a comment.")
-            with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as source:
-                execution, parameters = comment_request(json.load(source))
-            os.environ["EXECUTION"] = execution
-            os.environ["EXECUTION_INPUTS"] = parameters
-        elif event_name != "workflow_dispatch":
-            raise ValueError("Unsupported execution event.")
-        scripts = resolve_execution(
-            os.environ["EXECUTION"], os.environ["EXECUTION_INPUTS"]
-        )
-        # Every child inherits the same JSON parameters. No shell evaluation.
-        args = sys.argv[1:]
-        if not args:
-            return run_execution(scripts)
-        if args == ["--single"]:
-            if len(scripts) != 1:
-                raise ValueError("Single execution requires exactly one script.")
-            return run_execution(scripts)
-        if args not in (["--serial-stage", "1"], ["--serial-stage", "2"]):
-            raise ValueError("Expected --single or --serial-stage 1 or 2.")
-        return run_stage(scripts, int(args[1]))
-    except (KeyError, ValueError, OSError) as error:
-        print(f"Invalid execution request: {error}", file=sys.stderr)
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -40,8 +40,7 @@ jobs:
           persist-credentials: false
       - name: Execute one registered Python script
         env:
-          PYTHONPATH: ${{ github.workspace }}
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
           EXECUTION_INPUTS: ${{ inputs.parameters }}
-        run: python3 scripts/execute.py --single
+        run: python3 -m app execute --single
