@@ -46,6 +46,7 @@ python3 -m app trigger
 python3 -m app execute --single
 python3 -m app execute --serial-stage 1
 python3 -m app execute --serial-stage 2
+python3 -m app test
 ```
 
 These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered tasks as isolated `python3 -m app task <script>` subprocesses, with a fixed allowlist and fail-fast exit handling. Task is a low-level command; for workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
@@ -54,7 +55,7 @@ These commands consume the existing GitHub event and execution environment varia
 
 `app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, explicitly import the module in `app/commands/__init__.py`, and add its name to `config/commands.json`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
 
-Run offline regression tests with `python3 -m unittest discover -s tests -v`.
+Run offline regression tests with `python3 -m app test`.
 
 For an end-to-end CLI regression check, use a reviewed documentation-only PR and submit the existing serial execution command. Confirm that Trigger submits exactly one Serial Run, Merge completes before Delete starts, the PR is merged, and its unchanged head branch is absent. Inspect the run logs rather than relying only on the workflow conclusion.
 
@@ -69,3 +70,7 @@ When verifying a workflow route change, confirm the Trigger and worker runs both
 The four C-rank JSON registries under `config/` define CLI command names, execution allowlists, ordered workflow routes and deletion availability. Code still binds explicitly imported implementations; JSON cannot import arbitrary modules, create workflow permissions or bypass validation. `config/deletions.json` enables only branch deletion; issue deletion is disabled because the default GITHUB_TOKEN returned FORBIDDEN in the disposable issue #15 probe. Actions Run deletion is also disabled until a dedicated target/permission contract and handler are implemented. The permission strings are documentation, not authorization. No changes to existing YAML or comment protocol are required.
 
 For JSON registry regression verification, confirm that the worker and Trigger use the same reviewed configuration commit and that the serial route is selected from `config/workflows.json`.
+
+### Test registry
+
+The offline test suite uses `config/tests.json` as its ordered manifest. Each `tests/suites/` module registers a `unittest.TestCase` class with `@register(name)` from `tests/registry.py`; `tests/suites/__init__.py` imports implementations explicitly. The registered CLI command `app/commands/test.py` lazily imports the suites and builds the configured suite. Shared fixtures live in `tests/fixture.py`. Missing, unknown, duplicate or empty suites are rejected instead of silently reducing coverage. Keep fixtures and assertions independent of production registry data. Run the full suite with the `python3 -m app test` command. To extend tests, add a registered suite and its manifest entry; no dispatcher conditionals or dynamic imports are required.
