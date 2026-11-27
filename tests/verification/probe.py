@@ -256,7 +256,7 @@ for name,key,value in (("valid","sample",Sample),("duplicate","trigger",object),
 for name,names in (("ordered",("merge","trigger")),("subset",("test",)),("missing",("unknown",))):
     with patch(registry_module+".load_names",return_value=names):
         record("command_registry:"+name,lambda:list(configured_commands()),Mock())
-for name,key,value in (("valid","sample",SampleSuite),("duplicate","registry",object),
+for name,key,value in (("valid","sample",SampleSuite),("registration_duplicate","registry",object),
                        ("invalid_name","",SampleSuite),("invalid_type","bad",object)):
     with patch.dict(SUITES):
         record("suite_registry:"+name,lambda:(register_suite(key)(value),list(SUITES))[1],Mock())

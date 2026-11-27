@@ -17,7 +17,7 @@ class ComparisonContract(unittest.TestCase):
                 compare_ids(["a", "b"], new)
 
     def test_records_reject_missing_or_changed_evidence(self):
-        old = {f"fixture:{i}": i for i in range(1696)}
+        old = {f"fixture:{i}": i for i in range(1697)}
         with contextlib.redirect_stdout(io.StringIO()):
             compare_records(old, dict(old))
             for new in ({}, dict(old, **{"fixture:1": -1})):

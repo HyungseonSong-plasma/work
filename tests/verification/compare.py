@@ -13,7 +13,7 @@ import tempfile
 
 
 HERE = Path(__file__).resolve().parent
-RECORD_COUNT = 1696
+RECORD_COUNT = 1697
 SEMANTIC_COUNT = 29
 TIMEOUT = 120
 
@@ -65,7 +65,8 @@ def observe(label, root, sha, home):
 def compare_ids(old, new):
     if not old or len(old) != len(set(old)) or len(new) != len(set(new)):
         raise ValueError("Missing or duplicate test IDs.")
-    if [name for name in new if name in set(old)] != old:
+    original = set(old)
+    if [name for name in new if name in original] != old:
         raise ValueError("Original test IDs or relative order changed.")
     print(f"Original test IDs and order retained: {len(old)}; new: {len(new)-len(old)}")
 
