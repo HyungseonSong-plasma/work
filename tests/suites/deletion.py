@@ -360,10 +360,13 @@ class DeletionContract(TestSuite):
             from app.commands import delete as command
             target = ctx.target()
             validated = Mock(repository=REPO, ref=REF, run_id=13, targets=[target])
-            with patch.object(command, "ActionsContext") as context, \
+            with patch("app.framework.model.ActionsContext") as context, \
                     patch.object(command, "delete") as delete:
                 context.return_value.validate.return_value = validated
-                self.assertEqual(command.delete_actions(Mock()), 0)
+                args = SimpleNamespace(target="actions")
+                self.assertEqual(command.DeleteCommand.execute(args), 0)
+                context.assert_called_once_with(args)
+                context.return_value.validate.assert_called_once_with()
                 delete.assert_called_once_with("actions_batch", api=command.github_api,
                     remove=command.delete_resource, repository=REPO, run_ref=REF,
                     current_run_id=13, targets=[target], report=validated.report)

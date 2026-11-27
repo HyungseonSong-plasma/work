@@ -13,11 +13,12 @@ from app.framework.registry import configured_commands
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="python3 -m app")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name, command in configured_commands().items():
+    registered = configured_commands()
+    for name, command in registered.items():
         command.bind(subparsers, name)
     args = parser.parse_args(argv)
     try:
-        return args.handler(args)
+        return registered[args.command].execute(args)
     except HTTPError as error:
         print(f"GitHub API request failed: HTTP {error.code}", file=sys.stderr)
     except (URLError, ValueError, KeyError, TypeError, OSError,

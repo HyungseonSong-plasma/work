@@ -2,23 +2,22 @@
 """Trigger command and its workflow adapter."""
 
 from app.framework.registry import register
-from app.framework.model import Command, Context
+from app.framework.model import Command, workflow_plan
 from github.trigger import dispatch_request
 
 
-def execute():
-    ctx = Context().require_event("issue_comment", fresh=True)
-    workflow, request_id = dispatch_request(ctx.read_event(), ctx.repository, ctx.ref)
+def action(ctx, args):
+    return dispatch_request(ctx.read_event(), ctx.repository, ctx.ref)
+
+
+def report(ctx, result):
+    workflow, request_id = result
     ctx.report(f"Submitted {workflow}: {request_id}",
-           f"Submitted `{workflow}` for `{request_id}`.\n\n"
-           "Execution result is reported by the dispatched run.\n")
-    return 0
+               f"Submitted `{workflow}` for `{request_id}`.\n\n"
+               "Execution result is reported by the dispatched run.\n")
 
 
 @register("trigger")
 class TriggerCommand(Command):
     help = "Validate a PR comment and route it"
-
-    @staticmethod
-    def execute(args):
-        return execute()
+    plan = workflow_plan("issue_comment", action, report=report)

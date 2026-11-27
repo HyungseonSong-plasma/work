@@ -1,12 +1,14 @@
 # FileRank: C
 """Offline cli contract tests."""
 
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from app import cli
 from app.commands import execute as execute_command
 from app.framework.registry import COMMANDS, register, workflow_commands
-from app.framework.model import Command
+from app.framework.model import Command, CommandPlan, local_plan
 from tests.framework.model import TestSuite
 from tests.framework.registry import register as register_suite
 
@@ -34,9 +36,18 @@ class CliContract(TestSuite):
         )
 
         def check(ctx, args, expected):
-            with patch.object(execute_command, "execute", return_value=0) as call:
+            command = execute_command.ExecuteCommand
+            prepared = object()
+            validated = object()
+            prepare, validate, action = Mock(return_value=prepared), Mock(return_value=validated), Mock(return_value=0)
+            plan = replace(command.plan, prepare=prepare, validate=validate, action=action)
+            with patch.object(command, "plan", plan):
                 self.assertEqual(cli.main(args), 0)
-                call.assert_called_once_with(*expected)
+            prepare.assert_called_once()
+            parsed = prepare.call_args.args[0]
+            self.assertEqual((parsed.single, parsed.serial_stage), expected)
+            validate.assert_called_once_with(prepared, parsed)
+            action.assert_called_once_with(validated, parsed)
 
         self.run_cases(cases, check)
 
@@ -64,9 +75,7 @@ class CliContract(TestSuite):
                     def configure(parser):
                         parser.add_argument("--value", type=int, required=True)
 
-                    @staticmethod
-                    def execute(args):
-                        return args.value
+                    plan = local_plan(lambda ctx, args: args.value)
 
                 with patch("app.framework.registry.load_names", return_value=("sample",)):
                     self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
@@ -137,24 +146,128 @@ class CliContract(TestSuite):
     def test_no_argument_commands_delegate_to_module_execute(self):
         from app.commands import trigger, merge, test
         cases = (
-            ("trigger", "trigger", trigger),
-            ("merge", "merge", merge),
-            ("test", "test", test),
+            ("trigger", "trigger", trigger.TriggerCommand),
+            ("merge", "merge", merge.MergeCommand),
+            ("test", "test", test.TestCommand),
         )
 
-        def check(ctx, name, module):
-            with patch.object(module, "execute", return_value=0) as run:
+        def check(ctx, name, command):
+            prepared, validated = object(), object()
+            prepare = Mock(return_value=prepared)
+            validate = Mock(return_value=validated)
+            action = Mock(return_value=0)
+            report = Mock() if command.plan.report is not None else None
+            plan = replace(command.plan, prepare=prepare, validate=validate,
+                           action=action, report=report)
+            with patch.object(command, "plan", plan):
                 self.assertEqual(cli.main([name]), 0)
-                run.assert_called_once_with()
+            prepare.assert_called_once()
+            args = prepare.call_args.args[0]
+            self.assertEqual(vars(args), {"command": name})
+            validate.assert_called_once_with(prepared, args)
+            action.assert_called_once_with(validated, args)
+            if report is not None:
+                report.assert_called_once_with(validated, 0)
 
         self.run_cases(cases, check)
 
     def test_delete_command_delegates_to_module_execute(self):
         def check(ctx):
-            from app.commands import delete
-            with patch.object(delete, "execute", return_value=0) as run:
+            from app.commands.delete import DeleteCommand
+            prepared, validated = object(), object()
+            prepare, validate, action, report = (
+                Mock(return_value=prepared), Mock(return_value=validated),
+                Mock(return_value="Deleted"), Mock())
+            branch = replace(dict(DeleteCommand.targets)["branch"], prepare=prepare,
+                             validate=validate, action=action, report=report)
+            other = Mock()
+            actions = replace(dict(DeleteCommand.targets)["actions"], action=other)
+            with patch.object(DeleteCommand, "targets", (("branch", branch), ("actions", actions))):
                 self.assertEqual(cli.main(["delete", "branch"]), 0)
-                run.assert_called_once()
-                self.assertEqual(run.call_args.args[0].target, "branch")
+            prepare.assert_called_once()
+            args = prepare.call_args.args[0]
+            self.assertEqual(args.target, "branch")
+            validate.assert_called_once_with(prepared, args)
+            action.assert_called_once_with(validated, args)
+            report.assert_called_once_with(validated, "Deleted")
+            other.assert_not_called()
+
+        self.run_contract(check=check)
+
+    def test_command_lifecycle_order_and_failure(self):
+        cases = (("success", None), ("prepare", "prepare"),
+                 ("validate", "validate"), ("action", "action"), ("report", "report"))
+
+        def check(ctx, failure):
+            calls = []
+            prepared, validated = object(), object()
+
+            def stage(name, result):
+                def callback(*args):
+                    calls.append(name)
+                    if name == failure:
+                        raise ValueError(name)
+                    return result
+                return callback
+
+            class Sample(Command):
+                help = "Lifecycle probe"
+                plan = CommandPlan(stage("prepare", prepared), stage("validate", validated),
+                                   stage("action", 7), stage("report", None),
+                                   returns_status=True)
+
+            args = SimpleNamespace()
+            order = ["prepare", "validate", "action", "report"]
+            if failure is None:
+                self.assertEqual(Sample.execute(args), 7)
+                self.assertEqual(calls, order)
+            else:
+                with self.assertRaisesRegex(ValueError, failure):
+                    Sample.execute(args)
+                self.assertEqual(calls, order[:order.index(failure) + 1])
+
+        self.run_cases(cases, check)
+
+    def test_command_registration_rejects_lifecycle_overrides(self):
+        cases = (("execute", "execute"), ("bind", "bind"),
+                 ("missing_plan", "plan"), ("duplicate_targets", "targets"))
+
+        def check(ctx, attribute):
+            plan = local_plan(lambda ctx, args: 0)
+            values = {"execute": staticmethod(lambda args: 0),
+                      "bind": classmethod(lambda cls, parser, name: None),
+                      "plan": None, "targets": (("x", plan), ("x", plan))}
+            attrs = {"help": "Invalid", "plan": plan}
+            if attribute == "targets":
+                attrs["plan"] = None
+            attrs[attribute] = values[attribute]
+            invalid = type("InvalidCommand", (Command,), attrs)
+            with patch.dict(COMMANDS):
+                with self.assertRaises(TypeError):
+                    register("invalid")(invalid)
+                self.assertNotIn("invalid", COMMANDS)
+
+        self.run_cases(cases, check)
+
+    def test_command_parser_cannot_override_dispatch(self):
+        def check(ctx):
+            action = Mock(return_value=0)
+            alternate = Mock(return_value=0)
+
+            class Sample(Command):
+                help = "Invalid parser"
+                plan = local_plan(action)
+
+                @staticmethod
+                def configure(parser):
+                    parser.set_defaults(handler=alternate)
+
+            with patch.dict(COMMANDS):
+                register("sample")(Sample)
+                with patch("app.framework.registry.load_names", return_value=("sample",)):
+                    with self.assertRaises(TypeError):
+                        cli.main(["sample"])
+            action.assert_not_called()
+            alternate.assert_not_called()
 
         self.run_contract(check=check)

@@ -1,7 +1,8 @@
 # FileRank: C
 """Common framework for explicitly registered application commands."""
 
-from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from inspect import signature
 import json
 import os
 import re
@@ -10,26 +11,102 @@ from pathlib import Path
 from github.model import github_api, require_default_ref, parse_execute_comment, validate_pr_number
 
 
-class Command(ABC):
-    """Uniform CLI interface; commands without arguments use the default."""
+@dataclass(frozen=True)
+class CommandPlan:
+    """Declarative execution contract; the runner owns its stage order."""
+
+    prepare: object
+    validate: object
+    action: object
+    report: object = None
+    returns_status: bool = False
+
+    def __post_init__(self):
+        for callback, arity in ((self.prepare, 1), (self.validate, 2), (self.action, 2)):
+            _validate_callback(callback, arity)
+        if self.report is not None:
+            _validate_callback(self.report, 2)
+        if type(self.returns_status) is not bool:
+            raise TypeError("Command status mode must be boolean.")
+
+
+def _validate_callback(callback, arity):
+    try:
+        if not callable(callback):
+            raise TypeError("Not callable.")
+        signature(callback).bind(*([None] * arity))
+    except (TypeError, ValueError) as error:
+        raise TypeError("Invalid command lifecycle callback.") from error
+
+
+def _identity(ctx, args):
+    return ctx
+
+
+class Command:
+    """Registered implementations declare plans; they do not own the runner."""
 
     help = ""
-    workflow_execution = ()  # Explicit execution ID and fixed CLI arguments.
+    workflow_execution = ()
+    plan = None
+    targets = ()
 
     @classmethod
     def bind(cls, subparsers, name):
+        validate_command(cls)
         parser = subparsers.add_parser(name, help=cls.help)
         cls.configure(parser)
-        parser.set_defaults(handler=cls.execute)
+        if any(action.dest in ("command", "handler") for action in parser._actions):
+            raise TypeError("Reserved command parser destination.")
+        if any(name in parser._defaults for name in ("command", "handler")):
+            raise TypeError("Reserved command parser default.")
 
     @staticmethod
     def configure(parser):
         pass
 
-    @staticmethod
-    @abstractmethod
-    def execute(args):
-        raise NotImplementedError
+    @classmethod
+    def execute(cls, args):
+        validate_command(cls)
+        if cls.targets:
+            target = getattr(args, "target", None)
+            if not isinstance(target, str) or target not in dict(cls.targets):
+                raise ValueError("Unknown deletion target.")
+            plan = dict(cls.targets)[target]
+        else:
+            plan = cls.plan
+        ctx = plan.prepare(args)
+        ctx = plan.validate(ctx, args)
+        result = plan.action(ctx, args)
+        if plan.report is not None:
+            plan.report(ctx, result)
+        return result if plan.returns_status else 0
+
+
+def validate_command(command):
+    """Reject alternate registered execution entrypoints and malformed plans."""
+    if not isinstance(command, type) or not issubclass(command, Command):
+        raise TypeError("Command must extend Command model.")
+    for name in ("bind", "execute"):
+        if getattr(getattr(command, name), "__func__", None) is not getattr(Command, name).__func__:
+            raise TypeError(f"Command may not override framework {name}.")
+    _validate_callback(command.configure, 1)
+    if not isinstance(command.help, str) or not command.help:
+        raise TypeError("Command requires a help string.")
+    targets = command.targets
+    if not isinstance(targets, tuple):
+        raise TypeError("Command targets must be an explicit tuple.")
+    if targets:
+        if command.plan is not None or any(
+                not isinstance(row, tuple) or len(row) != 2
+                or not isinstance(row[0], str) or not row[0]
+                or type(row[1]) is not CommandPlan for row in targets):
+            raise TypeError("Invalid targeted command plans.")
+        names = [name for name, _ in targets]
+        if len(names) != len(set(names)):
+            raise TypeError("Duplicate command target.")
+    elif type(command.plan) is not CommandPlan:
+        raise TypeError("Command requires a lifecycle plan.")
 
 
 class Context:
@@ -191,3 +268,32 @@ class ActionsContext(Context):
         request = parse_execute_comment(comment["body"])
         if actions_request(request) != inputs:
             raise ValueError("Source approval does not match dispatch inputs.")
+
+def local_plan(action):
+    """Local commands do not require GitHub environment variables."""
+    return CommandPlan(lambda args: None, _identity, action, returns_status=True)
+
+
+def workflow_plan(event, action, *, validate=_identity, report=None, returns_status=False):
+    """Require the expected event and first attempt before command validation."""
+    def verify(ctx, args):
+        ctx.require_event(event, fresh=True)
+        return validate(ctx, args)
+
+    return CommandPlan(lambda args: Context(), verify, action, report, returns_status)
+
+
+def pr_plan(execution, action, *, preflight=None, report=None):
+    """Enforce PR context validation, including fixed execution identifier."""
+    def prepare(args):
+        if preflight is not None:
+            preflight(args)
+        return PRContext(execution)
+
+    return CommandPlan(prepare, lambda ctx, args: ctx.validate(), action, report)
+
+
+def actions_plan(action):
+    """Enforce independent Actions worker authorization before mutation."""
+    return CommandPlan(lambda args: ActionsContext(args),
+                       lambda ctx, args: ctx.validate(), action)

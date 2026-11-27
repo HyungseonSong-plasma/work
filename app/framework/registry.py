@@ -3,7 +3,6 @@
 
 import json
 import re
-from inspect import isabstract
 
 from config import load_names
 
@@ -11,21 +10,15 @@ COMMANDS = {}
 
 
 def register(name):
-    """Register one command with a uniform configure/execute interface."""
+    """Register one command with a validated lifecycle plan."""
     def decorator(command):
-        from app.framework.model import Command
+        from app.framework.model import validate_command
 
         if not isinstance(name, str) or not name or name.startswith("-"):
             raise ValueError("Invalid command name.")
         if name in COMMANDS:
             raise ValueError(f"Duplicate command: {name}")
-        if not isinstance(command, type) or not issubclass(command, Command) or isabstract(command):
-            raise TypeError("Command must extend Command model.")
-        if not all(callable(getattr(command, attr, None))
-                   for attr in ("configure", "execute")):
-            raise TypeError("Command requires configure and execute methods.")
-        if not isinstance(getattr(command, "help", None), str) or not command.help:
-            raise TypeError("Command requires a help string.")
+        validate_command(command)
         COMMANDS[name] = command
         return command
     return decorator
@@ -36,7 +29,12 @@ def configured_commands():
     names = load_names("commands")
     if any(name not in COMMANDS for name in names):
         raise ValueError("Unknown configured command.")
-    return {name: COMMANDS[name] for name in names}
+    from app.framework.model import validate_command
+
+    selected = {name: COMMANDS[name] for name in names}
+    for command in selected.values():
+        validate_command(command)
+    return selected
 
 
 def workflow_commands():
