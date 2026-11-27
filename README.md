@@ -49,3 +49,9 @@ python3 -m app execute --serial-stage 2
 ```
 
 These commands consume the existing GitHub event and execution environment variables. The dispatcher launches registered tasks as isolated `python3 -m app task <script>` subprocesses, with a fixed allowlist and fail-fast exit handling. Task is a low-level command; for workflow execution use `execute`, which validates the whole chain before starting. Serial stage ordering remains enforced by GitHub Actions `needs`; invoking stage 2 manually does not establish stage 1 success. The existing branch deletion policy still requires an already merged PR.
+
+### Adding CLI commands
+
+`app/cli.py` is a generic parser and dispatcher. To add a command, define a class in `app/commands/` with a help string, `configure(parser)`, and `execute(args)`, decorate it with `@register("command-name")`, and explicitly import the module in `app/commands/__init__.py`. Duplicate registrations and invalid command interfaces are rejected. No filesystem discovery or user-controlled module imports are used. The CLI command registry is separate from the restricted workflow task allowlist in `scripts/execute.py`.
+
+Run offline regression tests with `python3 -m unittest discover -s tests -v`.
