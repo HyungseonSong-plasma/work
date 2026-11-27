@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from github.model import dispatch_workflow
 
 from execute import comment_request, resolve_execution
 
@@ -37,24 +37,6 @@ def route(event, repository, ref):
     }
 
 
-def dispatch(repository, workflow, payload, send=urlopen):
-    """Submit once, without polling or retrying an ambiguous response."""
-    url = (os.environ["GITHUB_API_URL"].rstrip("/") +
-           f"/repos/{repository}/actions/workflows/{workflow}/dispatches")
-    request = Request(
-        url, data=json.dumps(payload).encode("utf-8"), method="POST",
-        headers={
-            "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-    )
-    with send(request, timeout=30) as response:
-        if response.status not in (200, 204):
-            raise ValueError(f"Unexpected dispatch status: {response.status}")
-
-
 def main():
     try:
         if (os.environ["GITHUB_EVENT_NAME"] != "issue_comment" or
@@ -64,7 +46,7 @@ def main():
             event = json.load(stream)
         repository = os.environ["GITHUB_REPOSITORY"]
         workflow, payload = route(event, repository, os.environ["GITHUB_REF"])
-        dispatch(repository, workflow, payload)
+        dispatch_workflow(repository, workflow, payload)
         print(f"Submitted {workflow}: {payload['inputs']['request_id']}")
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if summary:

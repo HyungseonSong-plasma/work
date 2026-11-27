@@ -33,3 +33,7 @@ For scheduled submission, an explicitly owner-authored comment can use the same 
 ### Inspecting execution results
 
 Open [Trigger](../../actions/workflows/trigger.yml) to inspect request submission, then find the corresponding Single Run or Serial Run by its `comment-<id>` run-name suffix. In Serial Run, inspect Merge and Delete separately. A successful Delete job can also represent a safety skip; verify its log and branch state before reporting that the branch was removed.
+
+### GitHub integration
+
+The repository-root `github/model.py` is the shared GitHub REST API transport and workflow dispatch module. Execution and routing policies remain in `scripts/`. Workflows set `PYTHONPATH` to the trusted repository workspace so direct script execution and its child processes can import `github.model`. For local direct script invocation from the repository root, use `PYTHONPATH=. python3 scripts/<script>.py` with the required environment variables.
