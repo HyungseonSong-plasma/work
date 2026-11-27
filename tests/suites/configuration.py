@@ -9,7 +9,7 @@ from unittest.mock import patch
 from app.registry import configured_commands
 from config import load_names, load_registry, require_deletion
 from github.model import WorkflowRegistry
-from scripts import execute
+from app.registry import execution_ids
 from tests.suites.model import TestSuite
 from tests.registry import register
 
@@ -34,12 +34,12 @@ class ConfigurationContract(TestSuite):
         with self.assertRaises(ValueError):
             WorkflowRegistry.from_entries(
                 [{"execution": ["unknown.py"], "workflow": "single_run.yml"}],
-                execute.EXECUTIONS)
+                execution_ids())
 
     def test_workflow_entries_rejects_duplicate_routes(self):
         entry = {"execution": ["pr_merge.py"], "workflow": "single_run.yml"}
         with self.assertRaises(ValueError):
-            WorkflowRegistry.from_entries([entry, entry], execute.EXECUTIONS)
+            WorkflowRegistry.from_entries([entry, entry], execution_ids())
 
     def test_deletion_config(self):
         require_deletion("branch")

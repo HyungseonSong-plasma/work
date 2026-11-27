@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 
-from github.model import github_api
+from github.model import github_api, require_default_ref, parse_execute_comment, validate_pr_number
 
 
 class Command(ABC):
@@ -100,7 +100,7 @@ class PRContext(Context):
 
     def validate(self):
         from github.model import parse_pr_parameters
-        from scripts.execute import resolve_execution
+        from app.registry import resolve_execution
 
         self.require_event("workflow_dispatch", fresh=True)
         resolve_execution(self.execution_id, self.parameters)
@@ -155,10 +155,10 @@ class ActionsContext(Context):
         owner = str(repo["owner"]["id"])
         if not (
             repo["full_name"] == repository
-            and ref == f"refs/heads/{repo['default_branch']}"
             and workflow_ref == f"{repository}/.github/workflows/actions_delete.yml@{ref}"
         ):
             raise ValueError("Unauthorized Actions deletion workflow.")
+        require_default_ref(ref, repo["default_branch"])
         sender = event["sender"]
         if str(sender["id"]) != actor_id:
             raise ValueError("Workflow actor mismatch.")
@@ -166,9 +166,9 @@ class ActionsContext(Context):
             if actor_id != owner:
                 raise ValueError("Manual deletion requires the owner.")
             return
-        if not re.fullmatch(r"comment-[1-9][0-9]*", request_id) or not re.fullmatch(
-                r"[1-9][0-9]*", source_pr):
+        if not re.fullmatch(r"comment-[1-9][0-9]*", request_id) or not isinstance(source_pr, str):
             raise ValueError("Invalid source comment or PR.")
+        validate_pr_number(source_pr)
         if actor_id != owner and not (
             actor_id == "41898282" and sender["login"] == "github-actions[bot]"
         ):
@@ -186,9 +186,8 @@ class ActionsContext(Context):
             and comment["issue_url"] == f"{api_url}/{root}/issues/{source_pr}"
             and pr["number"] == int(source_pr)
             and pr["base"]["repo"]["full_name"] == repository
-            and comment["body"].startswith("/execute ")
         ):
             raise ValueError("Source comment is not an unchanged owner PR request.")
-        request = json.loads(comment["body"][len("/execute "):])
+        request = parse_execute_comment(comment["body"])
         if actions_request(request) != inputs:
             raise ValueError("Source approval does not match dispatch inputs.")

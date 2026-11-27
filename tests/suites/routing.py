@@ -86,3 +86,18 @@ class RoutingContract(TestSuite):
                 with self.assertRaises(ValueError):
                     trigger.dispatch_request(event("pr_merge.py"), repository, ref, dispatch)
                 dispatch.assert_not_called()
+
+
+    def test_shared_validation_rejects_invalid_types(self):
+        from github.model import validate_sha, validate_pr_number, require_default_ref
+        for value in (True, None, 0, "", "0", "01", "-1"):
+            self.assert_rejected(validate_pr_number, value)
+        for value in (None, 1, "A" * 40, "a" * 39):
+            self.assert_rejected(validate_sha, value)
+        self.assert_rejected(require_default_ref, REF, "")
+        self.assert_rejected(require_default_ref, REF, "other")
+
+    def test_trigger_parses_owner_comment_once(self):
+        with patch.object(trigger, "owner_comment", wraps=trigger.owner_comment) as parse:
+            trigger.dispatch_request(event("pr_merge.py"), REPO, REF, Mock())
+            parse.assert_called_once()

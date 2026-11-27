@@ -1,19 +1,15 @@
 # FileRank: C
 """Merge a single, explicitly selected GitHub pull request."""
 
-import re
+from github.model import validate_pr_number, validate_sha, require_default_ref
 
 
 def merge_pr(api, repository, ref, pr_number, expected_head_sha):
     """Validate the request and merge with an atomic head-SHA guard."""
-    if not re.fullmatch(r"[1-9][0-9]*", pr_number):
-        raise ValueError("Invalid pull request number.")
-    if not re.fullmatch(r"[0-9a-f]{40}", expected_head_sha):
-        raise ValueError("Expected a full lowercase Git commit SHA.")
-
+    pr_number = validate_pr_number(pr_number)
+    validate_sha(expected_head_sha)
     default_branch = api("GET", f"repos/{repository}")["default_branch"]
-    if ref != f"refs/heads/{default_branch}":
-        raise ValueError("Run this workflow on the current default branch.")
+    require_default_ref(ref, default_branch)
 
     endpoint = f"repos/{repository}/pulls/{pr_number}"
     pr = api("GET", endpoint)
@@ -37,6 +33,6 @@ def merge_pr(api, repository, ref, pr_number, expected_head_sha):
         {"sha": expected_head_sha, "merge_method": "merge"},
     )
     sha = result.get("sha")
-    if result.get("merged") is not True or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+    if result.get("merged") is not True:
         raise ValueError("GitHub did not confirm a successful merge.")
-    return sha
+    return validate_sha(sha)

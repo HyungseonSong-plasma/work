@@ -4,12 +4,12 @@
 from app.commands.model import Command, PRContext
 from app.registry import register
 from github.model import github_api
-from scripts import pr_merge
+from github import merge
 
 
 def execute():
     ctx = PRContext("pr_merge.py").validate()
-    result = pr_merge.merge_pr(github_api, ctx.repository, ctx.ref, ctx.number, ctx.sha)
+    result = merge.merge_pr(github_api, ctx.repository, ctx.ref, ctx.number, ctx.sha)
     ctx.report(f"Merged PR #{ctx.number}: {result}",
                f"Merged PR #{ctx.number}\n\nMerge commit: `{result}`")
     return 0
