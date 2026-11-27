@@ -98,3 +98,5 @@ After standardizing the thin command adapters, verify the unchanged serial comme
 Verify the context model on the post-change default branch using the unchanged serial comment route and both single and batch Actions deletion requests.
 
 Shared SHA, PR number, default-ref and execution-comment parsing functions live in `github/model.py`. Trigger and workers independently invoke these validators; remote-state and mutation guards remain in the GitHub operation handlers. `github/merge.py` contains PR merge implementation. Deletion policy checks remain at both the public dispatcher and directly callable mutation handlers as independent safeguards.
+
+Verify the script-free execution registry on the post-change default branch via the unchanged serial PR comment and dedicated Actions deletion route.
