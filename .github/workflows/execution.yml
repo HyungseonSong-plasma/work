@@ -2,6 +2,8 @@
 name: Execution
 
 on:
+  issue_comment:
+    types: [created]
   workflow_dispatch:
     inputs:
       execution:
@@ -18,7 +20,16 @@ permissions: {}
 
 jobs:
   execute:
-    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    if: >-
+      ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+          (github.event_name == 'workflow_dispatch' ||
+           (github.event_name == 'issue_comment' &&
+            github.run_attempt == '1' &&
+            github.event.issue.pull_request &&
+            github.event.comment.user.id == github.event.repository.owner.id &&
+            github.event.sender.id == github.event.repository.owner.id &&
+            github.event.comment.author_association == 'OWNER' &&
+            startsWith(github.event.comment.body, '/execute '))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
