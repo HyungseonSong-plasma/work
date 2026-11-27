@@ -88,6 +88,20 @@ def comment_request(event):
     })
 
 
+def run_stage(scripts, stage, run=subprocess.run):
+    """Run one validated job slot, publishing whether the next slot is needed."""
+    if len(scripts) > 2:
+        raise ValueError("The workflow supports at most two execution stages.")
+    if stage not in (1, 2) or stage > len(scripts):
+        raise ValueError("Requested stage is not present in the execution chain.")
+    output = Path(os.environ["GITHUB_OUTPUT"])
+    result = run_execution([scripts[stage - 1]], run=run)
+    if result == 0 and stage == 1:
+        with output.open("a", encoding="utf-8") as stream:
+            stream.write(f"has_next={'true' if len(scripts) == 2 else 'false'}\n")
+    return result
+
+
 def main():
     try:
         event_name = os.environ.get("GITHUB_EVENT_NAME", "workflow_dispatch")
@@ -104,7 +118,12 @@ def main():
             os.environ["EXECUTION"], os.environ["EXECUTION_INPUTS"]
         )
         # Every child inherits the same JSON parameters. No shell evaluation.
-        return run_execution(scripts)
+        args = sys.argv[1:]
+        if not args:
+            return run_execution(scripts)
+        if args not in (["--stage", "1"], ["--stage", "2"]):
+            raise ValueError("Expected --stage 1 or --stage 2.")
+        return run_stage(scripts, int(args[1]))
     except (KeyError, ValueError, OSError) as error:
         print(f"Invalid execution request: {error}", file=sys.stderr)
         return 1
