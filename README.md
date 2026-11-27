@@ -4,7 +4,7 @@ work laboratory
 
 ## Execution
 
-Run the [Run workflow](../../actions/workflows/run.yml) on the default branch.
+Use [Single Run](../../actions/workflows/single_run.yml) for one script or [Serial Run](../../actions/workflows/serial_run.yml) for a dependent chain. Both run on the default branch.
 
 | execution | Operation |
 | --- | --- |
@@ -14,13 +14,13 @@ Run the [Run workflow](../../actions/workflows/run.yml) on the default branch.
 
 Supply shared parameters as a JSON object containing `pr_number` and `expected_head_sha` (the full reviewed PR head commit SHA).
 
-The dispatcher validates the full registered execution list before starting. The Run workflow shows separate Merge and Delete jobs; the second job starts only after a successful first job and only for a two-script request. A single-script request runs one job (the unused second job may appear as skipped). The current workflow has two serial job slots; adding further slots requires a workflow change. Branch deletion still applies its own safety checks and may skip deletion. If deletion fails after a successful merge, retry only `branch_delete.py` with the same parameters.
+The dispatcher validates the full registered execution list before starting. Single Run has one job (Merge or Delete). Serial Run has two jobs (Merge then Delete); Delete starts only after Merge succeeds. The current serial workflow supports exactly the two registered scripts in that order. Branch deletion still applies its own safety checks and may skip deletion. If deletion fails after a successful merge, retry only `branch_delete.py` with the same parameters in Single Run.
 
 Only the explicitly requested operations run; ordinary PR merges do not automatically trigger branch deletion.
 
 ### Chat and scheduled execution
 
-An owner-authored top-level comment on the target PR can request the same workflow without opening the Actions UI:
+An owner-authored top-level comment on the target PR can request execution without opening the Actions UI. The literal delimiter ` - ` routes to Serial Run; otherwise Single Run handles the request. Both workflows receive the comment event, but only the matching workflow executes a job (the other appears skipped). Python independently validates the full chain and expected script count:
 
 ```text
 /execute {"execution":"pr_merge.py - branch_delete.py","expected_head_sha":"<full reviewed PR head SHA>"}
