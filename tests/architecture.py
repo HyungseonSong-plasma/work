@@ -12,7 +12,8 @@ LIBRARIES = {
     "libs": frozenset(),
     "libs.frame": frozenset(),
     "libs.command": frozenset(("libs.frame",)),
-    "libs.github": frozenset(("libs.frame",)),
+    "libs._github_transport": frozenset(),
+    "libs.github": frozenset(("libs.frame", "libs._github_transport")),
     "libs.workflow": frozenset(("libs.command", "libs.github")),
     "libs.testing": frozenset(("libs.frame",)),
 }
