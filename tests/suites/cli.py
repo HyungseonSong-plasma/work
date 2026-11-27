@@ -10,10 +10,10 @@ from app import cli
 from app.commands import execute as execute_command
 from app.registry import COMMANDS, register
 from tests.support import ROOT
-from tests.registry import register
+from tests.registry import register as register_suite
 
 
-@register("cli")
+@register_suite("cli")
 class CliContract(unittest.TestCase):
     def test_help_starts_real_module(self):
         result = subprocess.run([sys.executable, "-m", "app", "--help"],
