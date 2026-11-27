@@ -226,3 +226,20 @@ class ConfigurationContract(TestSuite):
                     self.assertTrue(validate_suite(suite))
 
         self.run_contract(check=check)
+
+    def test_shared_import_probe_distinguishes_module_prefixes(self):
+        cases = (
+            ("exact", ("json",), ("json",), False),
+            ("child", ("json.decoder",), ("json",), False),
+            ("specific_child", ("json",), ("json.decoder",), False),
+            ("different_prefix", ("json",), ("jsonx",), True),
+            ("missing_module", ("nonexistent_fixture_module_xyz",), (), False),
+            ("multiple_modules", ("json", "math"), ("math",), False),
+        )
+
+        def check(ctx, modules, forbidden, allowed):
+            from tests.fixtures import import_probe
+            result = import_probe(modules, forbidden)
+            self.assertEqual(result.returncode == 0, allowed, result.stderr)
+
+        self.run_cases(cases, check)
