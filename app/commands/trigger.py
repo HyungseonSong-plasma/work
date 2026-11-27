@@ -6,7 +6,7 @@ import os
 
 from app.registry import register
 from app.commands._summary import _summary
-from scripts.trigger import dispatch_request
+from github.trigger import dispatch_request
 
 
 def trigger():
