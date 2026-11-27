@@ -3,8 +3,8 @@
 
 from unittest.mock import patch
 
-from tests.suites.model import TestSuite
-from tests.registry import SUITES, build_suite, register
+from tests.framework.model import TestSuite
+from tests.framework.registry import SUITES, build_suite, register
 
 
 @register("registry")
@@ -55,7 +55,7 @@ class RegistryContract(TestSuite):
             build_suite(names=["empty"], registered={"empty": Empty})
 
     def test_context_is_fresh_per_test_case(self):
-        from tests.suites.model import ActionsTestContext
+        from tests.framework.model import ActionsTestContext
         class FixtureCase(TestSuite):
             context_type = ActionsTestContext
 
@@ -69,7 +69,7 @@ class RegistryContract(TestSuite):
 
     def test_workflow_fixture_environment_restores_on_error(self):
         import os
-        from tests.suites.model import WorkflowTestContext
+        from tests.framework.model import WorkflowTestContext
         before = dict(os.environ)
         ctx = WorkflowTestContext()
         with self.assertRaises(RuntimeError):
@@ -79,7 +79,7 @@ class RegistryContract(TestSuite):
         self.assertEqual(dict(os.environ), before)
 
     def test_workflow_fixture_returns_independent_events(self):
-        from tests.suites.model import WorkflowTestContext
+        from tests.framework.model import WorkflowTestContext
         ctx = WorkflowTestContext()
         first = ctx.event("pr_merge.py")
         first["sender"]["id"] = 99
@@ -87,7 +87,7 @@ class RegistryContract(TestSuite):
 
     def test_configuration_context_cleans_up_on_error(self):
         import config
-        from tests.suites.model import ConfigurationTestContext
+        from tests.framework.model import ConfigurationTestContext
         original = config.ROOT
         with self.assertRaises(RuntimeError):
             with ConfigurationTestContext().registry_root() as root:
@@ -106,7 +106,7 @@ class RegistryContract(TestSuite):
 
     def test_case_matrix_isolates_rows_and_reports_named_failures(self):
         import unittest
-        from tests.suites.model import ActionsTestContext
+        from tests.framework.model import ActionsTestContext
 
         observed = []
 

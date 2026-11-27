@@ -14,7 +14,7 @@ def register(name):
             raise ValueError("Invalid suite name.")
         if name in SUITES:
             raise ValueError(f"Duplicate test suite: {name}")
-        from tests.suites.model import TestSuite
+        from tests.framework.model import TestSuite
 
         if not isinstance(case, type) or not issubclass(case, TestSuite):
             raise TypeError("Suite must extend TestSuite model.")

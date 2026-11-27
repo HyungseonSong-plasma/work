@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 from subprocess import SubprocessError
 
 from app import commands  # Load the explicitly registered command modules.
-from app.registry import configured_commands
+from app.framework.registry import configured_commands
 
 
 def main(argv=None):

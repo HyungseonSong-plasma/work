@@ -1,8 +1,8 @@
 # FileRank: C
 """Merge an explicitly reviewed PR through the shared command model."""
 
-from app.commands.model import Command, PRContext
-from app.registry import register
+from app.framework.model import Command, PRContext
+from app.framework.registry import register
 from github.model import github_api
 from github import merge
 

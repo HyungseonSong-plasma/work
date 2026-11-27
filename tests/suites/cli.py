@@ -5,10 +5,10 @@ from unittest.mock import Mock, patch
 
 from app import cli
 from app.commands import execute as execute_command
-from app.registry import COMMANDS, register, workflow_commands
-from app.commands.model import Command
-from tests.suites.model import TestSuite
-from tests.registry import register as register_suite
+from app.framework.registry import COMMANDS, register, workflow_commands
+from app.framework.model import Command
+from tests.framework.model import TestSuite
+from tests.framework.registry import register as register_suite
 
 
 @register_suite("cli")
@@ -67,7 +67,7 @@ class CliContract(TestSuite):
                 def execute(args):
                     return args.value
 
-            with patch("app.registry.load_names", return_value=("sample",)):
+            with patch("app.framework.registry.load_names", return_value=("sample",)):
                 self.assertEqual(cli.main(["sample", "--value", "4"]), 4)
 
     def test_duplicate_registration_rejected(self):
@@ -88,7 +88,7 @@ class CliContract(TestSuite):
         )
 
         def check(ctx, successful, expected):
-            with patch("tests.registry.build_suite") as build, \
+            with patch("tests.framework.registry.build_suite") as build, \
                     patch("app.commands.test.unittest.TextTestRunner") as runner:
                 result = Mock()
                 result.wasSuccessful.return_value = successful

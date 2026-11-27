@@ -1,8 +1,8 @@
 # FileRank: C
 """Trigger command and its workflow adapter."""
 
-from app.registry import register
-from app.commands.model import Command, Context
+from app.framework.registry import register
+from app.framework.model import Command, Context
 from github.trigger import dispatch_request
 
 

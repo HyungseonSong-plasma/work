@@ -1,8 +1,8 @@
 # FileRank: C
 """Branch and Actions deletion command with independent target validation."""
 
-from app.commands.model import Command, PRContext, ActionsContext
-from app.registry import register
+from app.framework.model import Command, PRContext, ActionsContext
+from app.framework.registry import register
 from github.delete import delete
 from github.model import github_api, delete_resource
 

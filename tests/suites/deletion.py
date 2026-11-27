@@ -5,12 +5,12 @@ from copy import deepcopy
 import json
 from unittest.mock import Mock, patch
 
-from app.commands.model import ActionsContext
+from app.framework.model import ActionsContext
 from types import SimpleNamespace
 from github import delete as deletion
 from github.model import delete_resource
-from tests.registry import register
-from tests.suites.model import TestSuite, ActionsTestContext, REPO, REF, SHA
+from tests.framework.registry import register
+from tests.framework.model import TestSuite, ActionsTestContext, REPO, REF, SHA
 from github import trigger
 
 

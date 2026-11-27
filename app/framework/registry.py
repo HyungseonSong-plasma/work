@@ -13,7 +13,7 @@ COMMANDS = {}
 def register(name):
     """Register one command with a uniform configure/execute interface."""
     def decorator(command):
-        from app.commands.model import Command
+        from app.framework.model import Command
 
         if not isinstance(name, str) or not name or name.startswith("-"):
             raise ValueError("Invalid command name.")
