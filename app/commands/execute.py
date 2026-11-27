@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 from app.wiring import register, resolve_execution, workflow_commands
-from libs.command import Command
-from libs.workflow import workflow_plan, require_execution_membership
+from work.libs.command import Command
+from work.libs.workflow import workflow_plan, require_execution_membership
 
 
 def run_execution(executions, run=subprocess.run):

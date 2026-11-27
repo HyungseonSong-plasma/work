@@ -9,20 +9,21 @@ from tokenize import open as open_source
 
 
 LIBRARIES = {
-    "libs": frozenset(),
-    "libs.frame": frozenset(),
-    "libs.command": frozenset(("libs.frame",)),
-    "libs._github_transport": frozenset(),
-    "libs.github": frozenset(("libs.frame", "libs._github_transport")),
-    "libs.workflow": frozenset(("libs.command", "libs.github")),
-    "libs._test_grammar": frozenset(),
-    "libs.testing": frozenset(("libs.frame", "libs._test_grammar")),
+    "work": frozenset(),
+    "work.libs": frozenset(),
+    "work.libs.frame": frozenset(),
+    "work.libs.command": frozenset(("work.libs.frame",)),
+    "work.libs._github_transport": frozenset(),
+    "work.libs.github": frozenset(("work.libs.frame", "work.libs._github_transport")),
+    "work.libs.workflow": frozenset(("work.libs.command", "work.libs.github")),
+    "work.libs._test_grammar": frozenset(),
+    "work.libs.testing": frozenset(("work.libs.frame", "work.libs._test_grammar")),
 }
-LEGACY = ("app.framework", "github.framework", "tests.framework", "framework_tests",
+LEGACY = ("libs", "app.framework", "github.framework", "tests.framework", "framework_tests",
           "tests.framework_tests")
-ROOTS = ("libs", "app", "github", "config", "tests")
-DOMAIN_LIBS = frozenset(("libs.frame", "libs.github", "libs.workflow"))
-APP_LIBS = DOMAIN_LIBS | {"libs.command"}
+ROOTS = ("work", "app", "github", "config", "tests")
+DOMAIN_LIBS = frozenset(("work.libs.frame", "work.libs.github", "work.libs.workflow"))
+APP_LIBS = DOMAIN_LIBS | {"work.libs.command"}
 LAZY_TESTS = frozenset(("tests.suites", "tests.wiring"))
 
 
@@ -38,7 +39,7 @@ def _targets(node, package):
     if node.level:
         module = resolve_name("." * node.level + module, package)
     # Package-level from imports may name modules, so expand them explicitly.
-    if module in ("libs", "app", "github", "tests"):
+    if module in ("work", "work.libs", "app", "github", "tests"):
         return tuple(module + "." + alias.name for alias in node.names)
     return (module,)
 
@@ -54,7 +55,7 @@ def _allowed(source, target, lazy):
         return False
     if dependency not in ROOTS:
         return dependency in sys.stdlib_module_names
-    if root == "libs":
+    if root == "work":
         return target in LIBRARIES.get(source, ())
     if root == "config":
         return False
@@ -70,7 +71,9 @@ def source_violations(path, source):
     """Inspect all import statements, including nested and relative imports."""
     module = _module(path)
     root = module.split(".")[0]
-    if root == "libs" and module not in LIBRARIES:
+    if root == "libs":
+        return (f"{path}: legacy library source {module}",)
+    if root == "work" and module not in LIBRARIES:
         return (f"{path}: undeclared library module {module}",)
     package = module if Path(path).name == "__init__.py" else module.rpartition(".")[0]
     try:
@@ -111,8 +114,8 @@ def repository_violations(root):
         if path.exists() or path.with_suffix(".py").exists():
             failures.append(f"Legacy framework path: {name}")
     for module in LIBRARIES:
-        path = (root / "libs" / "__init__.py" if module == "libs" else
-                root.joinpath(*module.split(".")).with_suffix(".py"))
+        path = root.joinpath(*module.split("."))
+        path = path / "__init__.py" if module in ("work", "work.libs") else path.with_suffix(".py")
         if not path.is_file():
             failures.append(f"Missing library: {module}")
     for package in ROOTS:

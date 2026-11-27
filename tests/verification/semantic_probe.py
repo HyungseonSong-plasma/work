@@ -7,7 +7,9 @@ from copy import deepcopy
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from github import actions, trigger
-from libs.workflow import PRContext
+from _snapshot_imports import library
+
+PRContext = library("workflow").PRContext
 from app.wiring import resolve_execution
 from app.commands import execute
 from app.commands.trigger import route_registry

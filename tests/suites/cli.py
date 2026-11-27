@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 from app import cli
 from app.commands import execute as execute_command
 from app.wiring import COMMANDS, register, workflow_commands
-from libs.command import Command, CommandPlan, local_plan
-from libs.testing import TestSuite
+from work.libs.command import Command, CommandPlan, local_plan
+from work.libs.testing import TestSuite
 from tests.fixtures import TestContext
 from tests.wiring import register as register_suite
 
@@ -279,7 +279,7 @@ class CliContract(TestSuite):
     def test_command_library_import_is_domain_independent(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("libs.command",),
+            result = import_probe(("work.libs.command",),
                                   ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -287,7 +287,7 @@ class CliContract(TestSuite):
 
     def test_command_registry_isolation_and_manifest_order(self):
         def check(ctx):
-            from libs.command import CommandRegistry
+            from work.libs.command import CommandRegistry
             first, second = CommandRegistry(), CommandRegistry()
 
             @first.register("alpha")
@@ -316,8 +316,8 @@ class CliContract(TestSuite):
                  ("status_no_report", True, False), ("zero_no_report", False, False))
 
         def check(ctx, returns_status, has_report):
-            from libs import command as framework
-            from libs.frame import Frame
+            from work.libs import command as framework
+            from work.libs.frame import Frame
             from unittest.mock import call
             args, prepared, validated, result = (object(), object(), object(), object())
             prepare = Mock(return_value=prepared)
@@ -360,7 +360,7 @@ class CliContract(TestSuite):
         )
 
         def check(ctx, failure, expected):
-            from libs.command import run_cli, CommandRegistry
+            from work.libs.command import run_cli, CommandRegistry
             from unittest.mock import call
             trace = Mock()
             configured_error = ValueError("configuration")

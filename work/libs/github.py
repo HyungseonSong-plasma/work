@@ -5,8 +5,8 @@ from dataclasses import dataclass
 import json
 import re
 
-from libs.frame import FrameContract, Registry, validate_unique
-from libs._github_transport import CLIENT, GitHubClient, git_session
+from work.libs.frame import FrameContract, Registry, validate_unique
+from work.libs._github_transport import CLIENT, GitHubClient, git_session
 
 
 # Input and remote-state validation

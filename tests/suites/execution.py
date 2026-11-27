@@ -7,9 +7,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 from app.commands import execute as execute_command, merge as merge_command, delete as delete_command
-from libs.workflow import Context, PRContext
+from work.libs.workflow import Context, PRContext
 from app.wiring import resolve_execution
-from libs.testing import TestSuite
+from work.libs.testing import TestSuite
 from tests.fixtures import WorkflowTestContext, PARAMS, REPO, REF, ROOT, SHA
 from tests.wiring import register
 
@@ -257,7 +257,7 @@ class ExecutionContract(TestSuite):
         def check(ctx):
             from app.commands import trigger as trigger_command
             from app import cli
-            from libs.workflow import Context
+            from work.libs.workflow import Context
             event = ctx.event("pr_merge.py")
             with ctx.patched_environment(GITHUB_EVENT_NAME="issue_comment"):
                 with patch.object(Context, "read_event", return_value=event) as read, \
@@ -367,7 +367,7 @@ class ExecutionContract(TestSuite):
                  ("delete_method", "DELETE"), ("unknown_method", "INVALID"))
 
         def check(ctx, method):
-            from libs.github import JsonMutation, guarded_json_mutation
+            from work.libs.github import JsonMutation, guarded_json_mutation
             api, confirm = Mock(), Mock()
             foreign = Mock()
             prepared = (foreign if method is None else
@@ -388,7 +388,7 @@ class ExecutionContract(TestSuite):
                  ("api_failure", "mutate"), ("confirm_failure", "confirm"))
 
         def check(ctx, failure):
-            from libs.github import JsonMutation, guarded_json_mutation
+            from work.libs.github import JsonMutation, guarded_json_mutation
             result = {"merged": True, "sha": SHA}
             api = Mock(side_effect=ValueError("mutate") if failure == "mutate" else None,
                        return_value=result)
@@ -451,7 +451,7 @@ class ExecutionContract(TestSuite):
     def test_workflow_library_import_is_domain_independent(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("libs.workflow",),
+            result = import_probe(("work.libs.workflow",),
                                   ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((ROOT / "app" / "framework").exists())
@@ -487,8 +487,8 @@ class ExecutionContract(TestSuite):
                  ("resolve_reject", "resolve"), ("wrong_event", "event"))
 
         def check(ctx, failure):
-            from libs.workflow import pr_plan
-            from libs.command import Command
+            from work.libs.workflow import pr_plan
+            from work.libs.command import Command
             from unittest.mock import call
             args = object()
             trace = Mock()
@@ -529,8 +529,8 @@ class ExecutionContract(TestSuite):
                  ("action", "action"), ("report", "report"))
 
         def check(ctx, failure):
-            from libs.workflow import context_plan
-            from libs.command import Command
+            from work.libs.workflow import context_plan
+            from work.libs.command import Command
             from unittest.mock import call
             trace = Mock()
             args, validated, result = object(), object(), object()

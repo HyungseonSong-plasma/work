@@ -5,8 +5,8 @@ import json
 import os
 from pathlib import Path
 
-from libs.command import CommandPlan
-from libs.github import parse_pr_parameters
+from work.libs.command import CommandPlan
+from work.libs.github import parse_pr_parameters
 
 
 def require_execution_membership(executions, routes, *, unknown):

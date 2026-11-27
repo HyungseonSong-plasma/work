@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 from app.wiring import configured_commands
 from config import load_names, load_registry, require_deletion
-from libs.github import WorkflowRegistry
+from work.libs.github import WorkflowRegistry
 from app.wiring import execution_ids
-from libs.testing import TestSuite
+from work.libs.testing import TestSuite
 from tests.fixtures import ConfigurationTestContext
 from tests.wiring import register
 
@@ -120,48 +120,57 @@ class ConfigurationContract(TestSuite):
 
     def test_architecture_import_rules(self):
         cases = (
-            ("frame_stdlib", "libs/frame.py", "from inspect import signature", True),
-            ("workflow_command", "libs/workflow.py", "from libs.command import CommandPlan", True),
-            ("transport_stdlib", "libs/_github_transport.py", "from urllib.request import Request", True),
-            ("github_transport", "libs/github.py", "from libs._github_transport import GitHubClient", True),
-            ("transport_reverse", "libs/_github_transport.py", "from libs.github import CLIENT", False),
-            ("transport_frame", "libs/_github_transport.py", "from libs.frame import Frame", False),
-            ("workflow_private_transport", "libs/workflow.py", "from libs._github_transport import CLIENT", False),
-            ("app_private_transport", "app/cli.py", "from libs._github_transport import CLIENT", False),
-            ("domain_private_transport", "github/delete.py", "from libs._github_transport import git_session", False),
-            ("grammar_stdlib", "libs/_test_grammar.py", "import ast", True),
-            ("testing_grammar", "libs/testing.py", "from libs._test_grammar import validate_method", True),
-            ("grammar_reverse", "libs/_test_grammar.py", "from libs.testing import TestSuite", False),
-            ("grammar_frame", "libs/_test_grammar.py", "from libs.frame import Registry", False),
-            ("github_private_grammar", "libs/github.py", "from libs._test_grammar import RUNNERS", False),
-            ("app_private_grammar", "app/cli.py", "from libs._test_grammar import RUNNERS", False),
-            ("domain_private_grammar", "github/actions.py", "from libs._test_grammar import RUNNERS", False),
-            ("relative_frame", "libs/github.py", "from . import frame", True),
-            ("package_frame", "libs/command.py", "from libs import frame", True),
+            ("frame_stdlib", "work/libs/frame.py", "from inspect import signature", True),
+            ("workflow_command", "work/libs/workflow.py", "from work.libs.command import CommandPlan", True),
+            ("transport_stdlib", "work/libs/_github_transport.py", "from urllib.request import Request", True),
+            ("github_transport", "work/libs/github.py", "from work.libs._github_transport import GitHubClient", True),
+            ("transport_reverse", "work/libs/_github_transport.py", "from work.libs.github import CLIENT", False),
+            ("transport_frame", "work/libs/_github_transport.py", "from work.libs.frame import Frame", False),
+            ("workflow_private_transport", "work/libs/workflow.py", "from work.libs._github_transport import CLIENT", False),
+            ("app_private_transport", "app/cli.py", "from work.libs._github_transport import CLIENT", False),
+            ("domain_private_transport", "github/delete.py", "from work.libs._github_transport import git_session", False),
+            ("grammar_stdlib", "work/libs/_test_grammar.py", "import ast", True),
+            ("testing_grammar", "work/libs/testing.py", "from work.libs._test_grammar import validate_method", True),
+            ("grammar_reverse", "work/libs/_test_grammar.py", "from work.libs.testing import TestSuite", False),
+            ("grammar_frame", "work/libs/_test_grammar.py", "from work.libs.frame import Registry", False),
+            ("github_private_grammar", "work/libs/github.py", "from work.libs._test_grammar import RUNNERS", False),
+            ("app_private_grammar", "app/cli.py", "from work.libs._test_grammar import RUNNERS", False),
+            ("domain_private_grammar", "github/actions.py", "from work.libs._test_grammar import RUNNERS", False),
+            ("relative_frame", "work/libs/github.py", "from . import frame", True),
+            ("package_frame", "work/libs/command.py", "from work.libs import frame", True),
             ("github_config", "github/trigger.py", "def route():\n    from config import load_names", True),
             ("lazy_test", "app/commands/test.py", "def action(ctx, args):\n    from tests import suites\n    from tests.wiring import build_suite", True),
             ("ordinary_test", "tests/suites/cli.py", "from app import cli", True),
-            ("library_application", "libs/workflow.py", "from app.wiring import resolve_execution", False),
-            ("library_domain", "libs/github.py", "import github.actions", False),
-            ("library_config", "libs/testing.py", "if False:\n    import config", False),
-            ("library_test", "libs/command.py", "def run():\n    import tests.fixtures", False),
-            ("frame_reverse", "libs/frame.py", "from .command import Command", False),
-            ("wrong_library", "libs/github.py", "from libs.testing import TestSuite", False),
-            ("undeclared_library", "libs/new.py", "import json", False),
-            ("external_dependency", "libs/frame.py", "import requests", False),
+            ("library_application", "work/libs/workflow.py", "from app.wiring import resolve_execution", False),
+            ("library_domain", "work/libs/github.py", "import github.actions", False),
+            ("library_config", "work/libs/testing.py", "if False:\n    import config", False),
+            ("library_test", "work/libs/command.py", "def run():\n    import tests.fixtures", False),
+            ("frame_reverse", "work/libs/frame.py", "from .command import Command", False),
+            ("wrong_library", "work/libs/github.py", "from work.libs.testing import TestSuite", False),
+            ("undeclared_library", "work/libs/new.py", "import json", False),
+            ("external_dependency", "work/libs/frame.py", "import requests", False),
             ("domain_application", "github/delete.py", "from app import wiring", False),
             ("domain_test", "github/actions.py", "from tests import fixtures", False),
-            ("domain_command", "github/merge.py", "from libs.command import Command", False),
-            ("config_production", "config/__init__.py", "from libs.frame import Registry", False),
+            ("domain_command", "github/merge.py", "from work.libs.command import Command", False),
+            ("config_production", "config/__init__.py", "from work.libs.frame import Registry", False),
             ("eager_test", "app/commands/test.py", "from tests import suites", False),
             ("wrong_adapter", "app/commands/merge.py", "def action(ctx, args):\n    from tests import suites", False),
             ("wrong_function", "app/commands/test.py", "def prepare():\n    from tests import suites", False),
             ("wrong_test_target", "app/commands/test.py", "def action(ctx, args):\n    import tests.fixtures", False),
-            ("direct_testing_lib", "app/cli.py", "from libs.testing import TestSuite", False),
+            ("direct_testing_lib", "app/cli.py", "from work.libs.testing import TestSuite", False),
             ("legacy_import", "tests/suites/cli.py", "from app.framework.model import Command", False),
             ("relative_legacy", "tests/suites/cli.py", "from ..framework import model", False),
-            ("dynamic_module", "libs/github.py", "from importlib import import_module", False),
-            ("dynamic_builtin", "libs/frame.py", "__import__('app')", False),
+            ("dynamic_module", "work/libs/github.py", "from importlib import import_module", False),
+            ("dynamic_builtin", "work/libs/frame.py", "__import__('app')", False),
+            ("legacy_lib", "app/cli.py", "from libs.command import Command", False),
+            ("legacy_test_lib", "tests/suites/cli.py", "import libs", False),
+            ("legacy_lib_source", "libs/frame.py", "import ast", False),
+            ("bare_work", "app/cli.py", "import work", False),
+            ("bare_library_package", "app/cli.py", "from work import libs", False),
+            ("undeclared_work", "work/extra.py", "import ast", False),
+            ("unknown_work_dependency", "work/libs/frame.py", "import work.extra", False),
+            ("private_from_package", "app/cli.py", "from work.libs import _test_grammar", False),
+            ("namespace_init", "work/__init__.py", "import work.libs", False),
         )
 
         def check(ctx, path, source, allowed):
@@ -181,36 +190,39 @@ class ConfigurationContract(TestSuite):
                 for package in ROOTS:
                     (root / package).mkdir()
                 for module in LIBRARIES:
-                    path = (root / "libs" / "__init__.py" if module == "libs" else
-                            root.joinpath(*module.split(".")).with_suffix(".py"))
+                    path = root.joinpath(*module.split("."))
+                    path = path / "__init__.py" if module in ("work", "work.libs") else path.with_suffix(".py")
+                    path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_text("", encoding="utf-8")
                 self.assertEqual(repository_violations(root), ())
-                (root / "libs" / "frame.py").unlink()
+                (root / "work" / "libs" / "frame.py").unlink()
+                (root / "libs").mkdir()
                 (root / "app" / "framework").mkdir()
                 (root / "tests" / "framework.py").write_text("", encoding="utf-8")
                 self.assertEqual(repository_violations(root), (
+                    "Legacy framework path: libs",
                     "Legacy framework path: app.framework",
                     "Legacy framework path: tests.framework",
-                    "Missing library: libs.frame"))
+                    "Missing library: work.libs.frame"))
 
         self.run_contract(check=check)
 
     def test_architecture_import_runtime_boundaries(self):
         cases = (
-            ("frame", "libs.frame", ("app", "github", "config", "tests")),
-            ("command", "libs.command", ("app", "github", "config", "tests")),
-            ("transport", "libs._github_transport", ("app", "github", "config", "tests", "libs.frame", "libs.github", "libs.command", "libs.workflow", "libs.testing")),
-            ("github", "libs.github", ("app", "github", "config", "tests")),
-            ("workflow", "libs.workflow", ("app", "github", "config", "tests")),
-            ("grammar", "libs._test_grammar", ("app", "github", "config", "tests", "libs.frame", "libs.github", "libs.command", "libs.workflow", "libs.testing", "libs._github_transport")),
-            ("testing", "libs.testing", ("app", "github", "config", "tests")),
-            ("domain", "github.actions, github.delete, github.merge, github.trigger", ("app", "tests", "libs.testing")),
-            ("cli", "app.cli", ("tests", "libs.testing")),
+            ("frame", "work.libs.frame", ("app", "github", "config", "tests")),
+            ("command", "work.libs.command", ("app", "github", "config", "tests")),
+            ("transport", "work.libs._github_transport", ("app", "github", "config", "tests", "work.libs.frame", "work.libs.github", "work.libs.command", "work.libs.workflow", "work.libs.testing")),
+            ("github", "work.libs.github", ("app", "github", "config", "tests")),
+            ("workflow", "work.libs.workflow", ("app", "github", "config", "tests")),
+            ("grammar", "work.libs._test_grammar", ("app", "github", "config", "tests", "work.libs.frame", "work.libs.github", "work.libs.command", "work.libs.workflow", "work.libs.testing", "work.libs._github_transport")),
+            ("testing", "work.libs.testing", ("app", "github", "config", "tests")),
+            ("domain", "github.actions, github.delete, github.merge, github.trigger", ("app", "tests", "work.libs.testing")),
+            ("cli", "app.cli", ("tests", "work.libs.testing")),
         )
 
         def check(ctx, modules, forbidden):
             from tests.fixtures import import_probe
-            result = import_probe(modules.split(", "), forbidden)
+            result = import_probe(modules.split(", "), (*forbidden, "libs"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_cases(cases, check)
@@ -218,11 +230,11 @@ class ConfigurationContract(TestSuite):
     def test_architecture_framework_ownership(self):
         def check(ctx):
             from app.wiring import COMMANDS
-            from libs.command import Command, CommandRegistry, _COMMAND_FRAME
-            from libs.frame import Frame
-            from libs.github import JsonMutation
+            from work.libs.command import Command, CommandRegistry, _COMMAND_FRAME
+            from work.libs.frame import Frame
+            from work.libs.github import JsonMutation
             from github.merge import MERGE
-            from libs.testing import SuiteRegistry, validate_suite
+            from work.libs.testing import SuiteRegistry, validate_suite
             from tests.wiring import SUITES
             from tests.suites.registry_contract import RegistryContract
             self.assertIs(type(COMMANDS), CommandRegistry)

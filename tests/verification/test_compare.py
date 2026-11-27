@@ -4,11 +4,40 @@
 import contextlib
 import io
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from tests.verification.compare import compare_ids, compare_records, compare_semantic
+from tests.verification._snapshot_imports import namespace, library
 
 
 class ComparisonContract(unittest.TestCase):
+    def test_snapshot_namespace_is_unambiguous(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(ValueError):
+                namespace(root)
+            old = root / "libs"
+            old.mkdir()
+            with self.assertRaises(ValueError):
+                namespace(root)
+            (old / "__init__.py").touch()
+            self.assertEqual(namespace(root), "libs")
+            new = root / "work" / "libs"
+            new.mkdir(parents=True)
+            (new / "__init__.py").touch()
+            (new.parent / "__init__.py").touch()
+            with self.assertRaises(ValueError):
+                namespace(root)
+            (old / "__init__.py").unlink()
+            old.rmdir()
+            self.assertEqual(namespace(root), "work.libs")
+            (new.parent / "__init__.py").unlink()
+            with self.assertRaises(ValueError):
+                namespace(root)
+        with self.assertRaises(ValueError):
+            library("arbitrary")
+
     def test_ids_allow_only_additions_without_reordering(self):
         with contextlib.redirect_stdout(io.StringIO()):
             compare_ids(["a", "b"], ["x", "a", "b", "y"])

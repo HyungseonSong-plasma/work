@@ -4,7 +4,7 @@
 import argparse
 from dataclasses import dataclass
 
-from libs.frame import (FrameContract, Registry, select_registered,
+from work.libs.frame import (FrameContract, Registry, select_registered,
                         validate_callback, validate_overrides, validate_unique)
 
 
