@@ -64,6 +64,32 @@ class ExecutionContract(TestSuite):
 
         self.run_cases(cases, check)
 
+    def test_pr_worker_trusts_dispatch_permission_not_actor_identity(self):
+        cases = (
+            ("owner_fixture", "1", "1", True),
+            ("writer_fixture", "2", "1", True),
+            ("bot_fixture", "41898282", "1", True),
+            ("rerun", "2", "2", False),
+        )
+
+        def check(ctx, actor, attempt, allowed):
+            env = ctx.environment(GITHUB_ACTOR_ID=actor, GITHUB_RUN_ATTEMPT=attempt,
+                                  EXECUTION="pr_merge.py")
+            context = PRContext("pr_merge.py", env=env, resolve=resolve_execution)
+            args = SimpleNamespace(single=True, serial_stage=None)
+            with patch.dict("os.environ", env, clear=True), \
+                    patch.object(execute_command, "run_execution", return_value=0) as run:
+                if allowed:
+                    self.assertIs(context.validate(), context)
+                    self.assertEqual(execute_command.ExecuteCommand.execute(args), 0)
+                    run.assert_called_once_with(("pr_merge.py",))
+                else:
+                    self.assert_rejected(context.validate)
+                    self.assert_rejected(execute_command.ExecuteCommand.execute, args)
+                    run.assert_not_called()
+
+        self.run_cases(cases, check)
+
     def test_merge_adapter(self):
         @contextmanager
         def arrange(ctx):
