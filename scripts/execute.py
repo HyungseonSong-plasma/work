@@ -89,17 +89,11 @@ def comment_request(event):
 
 
 def run_stage(scripts, stage, run=subprocess.run):
-    """Run one validated job slot, publishing whether the next slot is needed."""
-    if len(scripts) > 2:
-        raise ValueError("The workflow supports at most two execution stages.")
-    if stage not in (1, 2) or stage > len(scripts):
-        raise ValueError("Requested stage is not present in the execution chain.")
-    output = Path(os.environ["GITHUB_OUTPUT"])
-    result = run_execution([scripts[stage - 1]], run=run)
-    if result == 0 and stage == 1:
-        with output.open("a", encoding="utf-8") as stream:
-            stream.write(f"has_next={'true' if len(scripts) == 2 else 'false'}\n")
-    return result
+    """Run exactly one slot of a validated two-script serial request."""
+    if len(scripts) != 2 or stage not in (1, 2):
+        raise ValueError("Serial execution requires exactly two scripts.")
+    return run_execution([scripts[stage - 1]], run=run)
+
 
 
 def main():
@@ -121,8 +115,12 @@ def main():
         args = sys.argv[1:]
         if not args:
             return run_execution(scripts)
-        if args not in (["--stage", "1"], ["--stage", "2"]):
-            raise ValueError("Expected --stage 1 or --stage 2.")
+        if args == ["--single"]:
+            if len(scripts) != 1:
+                raise ValueError("Single execution requires exactly one script.")
+            return run_execution(scripts)
+        if args not in (["--serial-stage", "1"], ["--serial-stage", "2"]):
+            raise ValueError("Expected --single or --serial-stage 1 or 2.")
         return run_stage(scripts, int(args[1]))
     except (KeyError, ValueError, OSError) as error:
         print(f"Invalid execution request: {error}", file=sys.stderr)
