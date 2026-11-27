@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: 3bbe30e4c15ffab03cba92daee4b0399445ac297
+          ref: 090fac0bc51af718c9b85615eee155f2554c0ffe
           path: candidate
           persist-credentials: false
       - name: Verify exact source and Q6 contract
@@ -35,14 +35,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C baseline rev-parse HEAD)" = "3796c9247d872328be1accecfb2a0afc43d21a40"
-          test "$(git -C candidate rev-parse HEAD)" = "3bbe30e4c15ffab03cba92daee4b0399445ac297"
+          test "$(git -C candidate rev-parse HEAD)" = "090fac0bc51af718c9b85615eee155f2554c0ffe"
           for path in app github config work .github/workflows; do
             test "$(git -C baseline rev-parse HEAD:$path)" = "$(git -C candidate rev-parse HEAD:$path)"
           done
           echo "All production source, config and workflow trees unchanged."
           cd candidate
           python -B -m unittest -v tests.verification.test_compare
-          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha 3796c9247d872328be1accecfb2a0afc43d21a40 --candidate . --candidate-sha 3bbe30e4c15ffab03cba92daee4b0399445ac297
+          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha 3796c9247d872328be1accecfb2a0afc43d21a40 --candidate . --candidate-sha 090fac0bc51af718c9b85615eee155f2554c0ffe
       - name: Build and install wheel and sdist in separate clean environments
         shell: bash
         run: |
