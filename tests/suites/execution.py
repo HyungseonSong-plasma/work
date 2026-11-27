@@ -1,6 +1,7 @@
 # FileRank: C
 """Offline execution contract tests."""
 
+from contextlib import contextmanager
 import sys
 from unittest.mock import Mock, patch
 
@@ -16,11 +17,19 @@ class ExecutionContract(TestSuite):
     context_type = WorkflowTestContext
 
     def test_reject_serial_in_single_mode(self):
-        with self.ctx.patched_environment(EXECUTION="pr_merge.py - branch_delete.py"):
-            with patch.object(execute_command, "run_execution") as run:
-                with self.assertRaises(ValueError):
-                    execute_command.execute(True, None)
-                run.assert_not_called()
+        @contextmanager
+        def arrange(ctx):
+            with ctx.patched_environment(EXECUTION="pr_merge.py - branch_delete.py"):
+                with patch.object(execute_command, "run_execution") as ctx.run:
+                    yield
+
+        def act(ctx):
+            return execute_command.execute(True, None)
+
+        def check(ctx, error):
+            ctx.run.assert_not_called()
+
+        self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
     def test_execution_subprocess_contract(self):
         cases = (
@@ -54,10 +63,20 @@ class ExecutionContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_merge_adapter(self):
-        with self.ctx.patched_environment():
-            with patch.object(merge_command.merge, "merge_pr", return_value=SHA) as merge:
-                self.assertEqual(merge_command.MergeCommand.execute(None), 0)
-                merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
+        @contextmanager
+        def arrange(ctx):
+            with ctx.patched_environment():
+                with patch.object(merge_command.merge, "merge_pr", return_value=SHA) as ctx.merge:
+                    yield
+
+        def act(ctx):
+            return merge_command.MergeCommand.execute(None)
+
+        def check(ctx, result):
+            self.assertEqual(result, 0)
+            ctx.merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
+
+        self.run_contract(act, check, arrange=arrange)
 
     def test_branch_disabled_blocks_before_api(self):
         from github.delete import delete_branch

@@ -62,11 +62,21 @@ class RoutingContract(TestSuite):
             registry.resolve(("second.py", "first.py"))
 
     def test_workflow_registry_rejects_duplicate(self):
-        registry = WorkflowRegistry()
-        registry.register(("first.py",), "single.yml")
-        with self.assertRaises(ValueError):
-            registry.register(("first.py",), "other.yml")
-        self.assertEqual(registry.resolve(("first.py",)), "single.yml")
+        def register(ctx):
+            ctx.registry = WorkflowRegistry()
+            ctx.registry.register(("first.py",), "single.yml")
+
+        def reject_duplicate(ctx):
+            self.assert_rejected(ctx.registry.register, ("first.py",), "other.yml")
+
+        def check(ctx):
+            self.assertEqual(ctx.registry.resolve(("first.py",)), "single.yml")
+
+        steps = (
+            ("register", register),
+            ("reject_duplicate", reject_duplicate),
+        )
+        self.run_scenario(steps, check)
 
     def test_workflow_registry_rejects_invalid_registration(self):
         cases = (

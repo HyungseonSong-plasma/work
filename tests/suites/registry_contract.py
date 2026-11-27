@@ -1,7 +1,8 @@
 # FileRank: C
 """Tests of registry completeness and registration validation."""
 
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import Mock, patch
 
 from tests.framework.model import TestSuite
 from tests.framework.registry import SUITES, build_suite, register
@@ -133,3 +134,163 @@ class RegistryContract(TestSuite):
         self.assertEqual(len(observed), 2)
         self.assertIsNot(observed[0], observed[1])
         self.assertIsNot(observed[0].remove, observed[1].remove)
+
+    def test_contract_runner_result_scope_and_fresh_context(self):
+        observed = []
+        active = []
+
+        @contextmanager
+        def arrange(ctx):
+            observed.append(ctx)
+            active.append(ctx)
+            try:
+                yield
+            finally:
+                active.pop()
+
+        def act(ctx):
+            self.assertEqual(active, [ctx])
+            return "result"
+
+        def check(ctx, result):
+            self.assertEqual(active, [ctx])
+            self.assertEqual(result, "result")
+
+        for _ in range(2):
+            self.run_contract(act, check, arrange=arrange)
+            self.assertEqual(active, [])
+        self.assertIsNot(observed[0], observed[1])
+
+    def test_contract_runner_expected_exception_is_action_only(self):
+        error = ValueError("expected")
+        act = Mock(side_effect=error)
+        check = Mock()
+        self.run_contract(act, check, raises=ValueError)
+        act.assert_called_once()
+        check.assert_called_once_with(act.call_args.args[0], error)
+
+        for effect, expected in ((None, AssertionError), (TypeError("wrong"), TypeError)):
+            with self.subTest(effect=effect):
+                check.reset_mock()
+                with self.assertRaises(expected):
+                    self.run_contract(Mock(side_effect=effect), check, raises=ValueError)
+                check.assert_not_called()
+
+        @contextmanager
+        def arrange(ctx):
+            raise ValueError("setup")
+            yield
+
+        act.reset_mock()
+        with self.assertRaisesRegex(ValueError, "setup"):
+            self.run_contract(act, check, arrange=arrange, raises=ValueError)
+        act.assert_not_called()
+        check.assert_not_called()
+
+        with self.assertRaisesRegex(ValueError, "check"):
+            self.run_contract(Mock(side_effect=error), Mock(side_effect=ValueError("check")),
+                              raises=ValueError)
+
+    def test_contract_runner_cleans_scope_on_failure(self):
+        active = []
+
+        @contextmanager
+        def arrange(ctx):
+            active.append(ctx)
+            try:
+                yield
+            finally:
+                active.pop()
+
+        for fail_in in ("act", "check"):
+            with self.subTest(fail_in=fail_in):
+                act = Mock(side_effect=RuntimeError("act") if fail_in == "act" else None)
+                check = Mock(side_effect=AssertionError("check") if fail_in == "check" else None)
+                with self.assertRaises((RuntimeError, AssertionError)):
+                    self.run_contract(act, check, arrange=arrange)
+                self.assertEqual(active, [])
+                if fail_in == "act":
+                    check.assert_not_called()
+
+    def test_scenario_runner_order_shared_context_and_cleanup(self):
+        observed = []
+
+        @contextmanager
+        def arrange(ctx):
+            observed.append(("arrange", ctx))
+            ctx.state = []
+            try:
+                yield
+            finally:
+                observed.append(("cleanup", ctx))
+
+        def first(ctx):
+            observed.append(("first", ctx))
+            ctx.state.append(1)
+
+        def second(ctx):
+            observed.append(("second", ctx))
+            ctx.state.append(2)
+
+        def check(ctx):
+            observed.append(("check", ctx))
+            self.assertEqual(ctx.state, [1, 2])
+
+        self.run_scenario((("first", first), ("second", second)), check, arrange=arrange)
+        self.assertEqual([name for name, _ in observed],
+                         ["arrange", "first", "second", "check", "cleanup"])
+        self.assertTrue(all(ctx is observed[0][1] for _, ctx in observed))
+
+    def test_scenario_runner_stops_and_names_failed_step(self):
+        for error in (AssertionError("failed"), RuntimeError("error")):
+            with self.subTest(error=type(error).__name__):
+                active = []
+
+                @contextmanager
+                def arrange(ctx):
+                    active.append(ctx)
+                    try:
+                        yield
+                    finally:
+                        active.pop()
+
+                first, later, check = Mock(side_effect=error), Mock(), Mock()
+                with self.assertRaises(type(error)) as caught:
+                    self.run_scenario((("broken", first), ("later", later)),
+                                      check, arrange=arrange)
+                self.assertIn("Scenario step: broken", caught.exception.__notes__)
+                first.assert_called_once()
+                later.assert_not_called()
+                check.assert_not_called()
+                self.assertEqual(active, [])
+
+    def test_runner_invalid_declarations_precede_callbacks(self):
+        act, check, arrange = Mock(), Mock(), Mock()
+        for bad_steps in ((), (("", act),), ((" ", act),), (("x",),),
+                          (("x", None),), (("x", act), ("x", act))):
+            with self.subTest(steps=bad_steps):
+                self.assert_rejected(self.run_scenario, bad_steps, check, arrange=arrange)
+        self.assert_rejected(self.run_scenario, (("x", act),), None, arrange=arrange)
+        self.assert_rejected(self.run_contract, None, check, arrange=arrange)
+        self.assert_rejected(self.run_contract, act, None, arrange=arrange)
+        self.assert_rejected(self.run_contract, act, check, arrange=arrange, raises="error")
+        self.assert_rejected(self.run_contract, act, check, arrange=False)
+        act.assert_not_called()
+        check.assert_not_called()
+        arrange.assert_not_called()
+
+    def test_runner_scope_cannot_silently_suppress_failure(self):
+        @contextmanager
+        def arrange(ctx):
+            try:
+                yield
+            except RuntimeError:
+                pass
+
+        act, check = Mock(side_effect=RuntimeError("unexpected")), Mock()
+        with self.assertRaisesRegex(AssertionError, "suppressed"):
+            self.run_contract(act, check, arrange=arrange)
+        check.assert_not_called()
+        with self.assertRaisesRegex(AssertionError, "suppressed"):
+            self.run_scenario((("broken", act),), check, arrange=arrange)
+        check.assert_not_called()
