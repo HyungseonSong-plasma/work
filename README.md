@@ -92,3 +92,5 @@ Batch comment: `/execute {"execution":"delete actions","runs":[{"run_id":123,"ex
 The approved external execution IDs `pr_merge.py` and `branch_delete.py` remain unchanged, as do workflow YAML, permissions, comment syntax and the Controller queue allowlist. Branch and Actions deletion share DeleteCommand but keep independent authorization and target validation; only branch deletion is eligible for PR execution chains.
 
 Post-refactor live verification uses the unchanged serial PR comment contract to launch the registered merge and delete branch commands via the unified registry.
+
+After standardizing the thin command adapters, verify the unchanged serial comment route and the dedicated Actions deletion context through the post-change default branch.
