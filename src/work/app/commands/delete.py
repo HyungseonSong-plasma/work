@@ -2,8 +2,8 @@
 """Branch and Actions deletion command with independent target validation."""
 
 from work.libs.command import Command
-from app.wiring import register, pr_plan, actions_plan
-from github.delete import delete
+from work.app.wiring import register, pr_plan, actions_plan
+from work.github.delete import delete
 from work.libs.github import CLIENT
 
 

@@ -8,11 +8,14 @@ import os
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from app import cli
-from app.commands import trigger as trigger_command
-from github import delete, merge
-from github import actions
-from _snapshot_imports import library
+from _snapshot_imports import application, library, layout
+from pathlib import Path
+
+cli = application("app.cli")
+trigger_command = application("app.commands.trigger")
+delete = application("github.delete")
+merge = application("github.merge")
+actions = application("github.actions")
 
 transport = library("github")
 
@@ -210,8 +213,10 @@ for args in ([],["unknown"],["execute"],["delete","unknown"],["execute","--seria
 _command = library("command")
 Command, CommandPlan = _command.Command, _command.CommandPlan
 local_plan, validate_command = _command.local_plan, _command.validate_command
-from app.wiring import register as register_command, configured_commands, COMMANDS, resolve_execution
-registry_module = "app.wiring"
+_wiring = application("app.wiring")
+register_command, configured_commands = _wiring.register, _wiring.configured_commands
+COMMANDS, resolve_execution = _wiring.COMMANDS, _wiring.resolve_execution
+registry_module = _wiring.__name__
 from tests import suites
 TestSuite = library("testing").TestSuite
 from tests.wiring import register as register_suite, build_suite, SUITES
@@ -286,7 +291,7 @@ class Targeted(Command):
 record("command_lifecycle:unknown_target",lambda:Targeted.execute(SimpleNamespace(target="invalid")),Mock())
 _workflow = library("workflow")
 PRContext, Context = _workflow.PRContext, _workflow.Context
-from github.actions import ActionsContext
+ActionsContext = actions.ActionsContext
 def make_pr(execution,env):
     return PRContext(execution,env=env,resolve=resolve_execution)
 env0={"GITHUB_EVENT_NAME":"workflow_dispatch","GITHUB_RUN_ATTEMPT":"1",
@@ -424,9 +429,7 @@ for runner in ("contract","scenario"):
             except Exception as e:
                 return [type(e).__name__,str(e),e is original,e is cleanup,getattr(e,"__notes__",[])]
         record("scope_identity:"+runner+"_"+failure,run_scoped,trace)
-from app.wiring import resolve_execution
-from app.commands import execute as execution_command
-from pathlib import Path
+execution_command = application("app.commands.execute")
 import sys
 for label, expression, parameters in (
     ("valid", "pr_merge.py - branch_delete.py", "{}"),
@@ -451,7 +454,7 @@ for label, chain, codes, stage in (
     trace=Mock()
     statuses=iter(codes)
     def run_process(argv, *, cwd, check):
-        trace.run(argv[1:],cwd == Path.cwd(),check)
+        trace.run(argv[1:], cwd == (Path.cwd() / "src" if layout(Path.cwd()) == "src" else Path.cwd()), check)
         return SimpleNamespace(returncode=next(statuses))
     record("execution_sequence:"+label,lambda:execution_command.run_execution(chain,run=run_process) if stage is None else execution_command.run_stage(chain,stage,run=run_process),trace)
 for label, request in (

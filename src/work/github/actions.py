@@ -4,8 +4,8 @@
 import json
 import re
 
-from config import require_deletion, load_registry
-from github._actions_retention import check_retention as _check_retention
+from work.config import require_deletion, load_registry
+from work.github._actions_retention import check_retention as _check_retention
 from work.libs.github import (CLIENT, validate_sha, review_repository,
                          require_default_ref, parse_execute_comment, validate_pr_number,
                          is_unchanged_comment)

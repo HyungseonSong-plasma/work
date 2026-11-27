@@ -5,8 +5,8 @@ import sys
 from urllib.error import HTTPError, URLError
 from subprocess import SubprocessError
 
-from app import commands  # Load the explicitly registered command modules.
-from app.wiring import configured_commands
+from work.app import commands  # Load the explicitly registered command modules.
+from work.app.wiring import configured_commands
 from work.libs.command import run_cli
 
 
@@ -19,6 +19,6 @@ def _report_error(command, error):
 
 
 def main(argv=None):
-    return run_cli("python3 -m app", configured_commands, argv,
+    return run_cli("python -m work", configured_commands, argv,
                    errors=(URLError, ValueError, KeyError, TypeError, OSError, SubprocessError),
                    handle_error=_report_error)

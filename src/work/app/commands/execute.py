@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app.wiring import register, resolve_execution, workflow_commands
+from work.app.wiring import register, resolve_execution, workflow_commands
 from work.libs.command import Command
 from work.libs.workflow import workflow_plan, require_execution_membership
 
@@ -18,8 +18,8 @@ def run_execution(executions, run=subprocess.run):
     for name in executions:
         print(f"Executing {name}", flush=True)
         result = run(
-            [sys.executable, "-m", "app", *routes[name]],
-            cwd=Path(__file__).resolve().parents[2], check=False,
+            [sys.executable, "-E", "-s", "-m", "work", *routes[name]],
+            cwd=Path(__file__).resolve().parents[3], check=False,
         )
         if result.returncode != 0:
             print(f"Stopped at {name} (exit {result.returncode}).",

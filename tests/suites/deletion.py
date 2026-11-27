@@ -6,16 +6,16 @@ from copy import deepcopy
 import json
 from unittest.mock import Mock, call, patch
 
-from github.actions import ActionsContext
+from work.github.actions import ActionsContext
 from types import SimpleNamespace
-from github import actions, delete as deletion
+from work.github import actions, delete as deletion
 from work.libs.github import GitHubClient
 from tests.wiring import register
 from work.libs.testing import TestSuite
 from tests.fixtures import ActionsTestContext, REPO, REF, SHA
-from github import trigger
-from app.commands.trigger import route_registry
-from app.wiring import resolve_execution
+from work.github import trigger
+from work.app.commands.trigger import route_registry
+from work.app.wiring import resolve_execution
 
 
 @register("deletion")
@@ -53,7 +53,7 @@ class DeletionContract(TestSuite):
             if config is None:
                 self.assert_rejected(deletion.delete, target)
             else:
-                with patch("config.load_registry", return_value=config):
+                with patch("work.config.load_registry", return_value=config):
                     self.assert_rejected(deletion.delete, target, **ctx.parameters)
             ctx.api.assert_not_called()
             ctx.remove.assert_not_called()
@@ -133,7 +133,7 @@ class DeletionContract(TestSuite):
         )
 
         def check(ctx, mode, expected):
-            from github._actions_retention import validate_successful_listing
+            from work.github._actions_retention import validate_successful_listing
             path = ".github/workflows/trigger.yml"
             run = dict(ctx.run_data, path=path, workflow_id=7, conclusion="success",
                        created_at="2026-01-01T00:20:00Z")
@@ -164,8 +164,8 @@ class DeletionContract(TestSuite):
     def test_retention_module_has_no_application_or_configuration_dependency(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("github._actions_retention",),
-                                  ("app", "work.libs", "config", "tests", "github.actions"))
+            result = import_probe(("work.github._actions_retention",),
+                                  ("work.app", "work.libs", "work.config", "tests", "work.github.actions"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)
@@ -624,10 +624,10 @@ class DeletionContract(TestSuite):
 
     def test_actions_command_uses_one_batch_path(self):
         def check(ctx):
-            from app.commands import delete as command
+            from work.app.commands import delete as command
             target = ctx.target()
             validated = Mock(repository=REPO, ref=REF, run_id=13, targets=[target])
-            with patch("github.actions.ActionsContext") as context, \
+            with patch("work.github.actions.ActionsContext") as context, \
                     patch.object(command, "delete") as delete:
                 context.return_value.validate.return_value = validated
                 args = SimpleNamespace(target="actions")

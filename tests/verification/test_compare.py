@@ -8,7 +8,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from tests.verification.compare import compare_ids, compare_records, compare_semantic
-from tests.verification._snapshot_imports import namespace, library
+from tests.verification._snapshot_imports import namespace, library, layout
 
 
 class ComparisonContract(unittest.TestCase):
@@ -32,7 +32,12 @@ class ComparisonContract(unittest.TestCase):
             (old / "__init__.py").unlink()
             old.rmdir()
             self.assertEqual(namespace(root), "work.libs")
-            (new.parent / "__init__.py").unlink()
+            source = root / "src" / "work"
+            source.parent.mkdir()
+            new.parent.rename(source)
+            self.assertEqual(layout(root), "src")
+            self.assertEqual(namespace(root), "work.libs")
+            (source / "__init__.py").unlink()
             with self.assertRaises(ValueError):
                 namespace(root)
         with self.assertRaises(ValueError):

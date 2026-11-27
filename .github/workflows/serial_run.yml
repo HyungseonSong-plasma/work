@@ -40,10 +40,11 @@ jobs:
           persist-credentials: false
       - name: Execute first registered script
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
           EXECUTION_INPUTS: ${{ inputs.parameters }}
-        run: python3 -m app execute --serial-stage 1
+        run: python3 -P -m work execute --serial-stage 1
 
   delete:
     name: Delete
@@ -62,7 +63,8 @@ jobs:
           persist-credentials: false
       - name: Execute second registered script
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           GH_TOKEN: ${{ github.token }}
           EXECUTION: ${{ inputs.execution }}
           EXECUTION_INPUTS: ${{ inputs.parameters }}
-        run: python3 -m app execute --serial-stage 2
+        run: python3 -P -m work execute --serial-stage 2

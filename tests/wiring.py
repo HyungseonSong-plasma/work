@@ -3,7 +3,7 @@
 
 import sys
 
-from config import load_names
+from work.config import load_names
 from work.libs.testing import SuiteRegistry
 
 SUITES = SuiteRegistry()

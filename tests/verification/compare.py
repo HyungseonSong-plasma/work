@@ -3,6 +3,7 @@
 
 import argparse
 from collections import Counter
+from copy import deepcopy
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,11 @@ import re
 import subprocess
 import sys
 import tempfile
+
+if __package__:
+    from ._snapshot_imports import layout
+else:
+    from _snapshot_imports import layout
 
 
 HERE = Path(__file__).resolve().parent
@@ -42,7 +48,7 @@ def child_environment(root, home):
     # Do not propagate tokens, agent sockets, PYTHONPATH or ambient Git config.
     # This reduces accidental credential use; it is not a sandbox.
     return {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(home),
-            "LC_ALL": "C.UTF-8", "PYTHONPATH": str(root), "PYTHONHASHSEED": "0",
+            "LC_ALL": "C.UTF-8", "PYTHONPATH": os.pathsep.join((str(root / "src"), str(root))) if layout(root) == "src" else str(root), "PYTHONHASHSEED": "0",
             "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_TERMINAL_PROMPT": "0"}
 
@@ -51,7 +57,7 @@ def observe(label, root, sha, home):
     env = child_environment(root, home)
     verify_snapshot(root, sha, env)
     python = [sys.executable, "-B"]
-    run(python + ["-m", "app", "test"], root, env)
+    run(python + ["-m", "work" if layout(root) == "src" else "app", "test"], root, env)
     ids = run(python + ["-c",
         'from tests import suites; from tests.wiring import build_suite; '
         'print("\\n".join(t.id() for t in build_suite()))'], root, env).splitlines()
@@ -83,6 +89,40 @@ def compare_records(old, new):
         for name in differences:
             print("DIFFERENCE", name, repr(old[name]), repr(new[name]))
         raise ValueError("Differential comparison failed.")
+
+
+# D4 changes only the command's displayed program name and the reviewed child argv.
+_CLI_KEYS = frozenset("cli:help:" + value for value in ("", "trigger", "execute", "merge", "delete", "test")) | frozenset(
+    "cli:invalid:" + value for value in ("", "unknown", "execute", "delete/unknown", "execute/--serial-stage/3"))
+_SEQUENCE_KEYS = frozenset("execution_sequence:" + value for value in
+                           ("success", "positive_failure", "negative_failure", "first_stage", "second_stage"))
+
+
+def compare_migration_records(old, new):
+    """Check exact D4 deltas, then run the original strict equality gate."""
+    if old.keys() != new.keys():
+        raise ValueError("Unexpected migration observation coverage.")
+    expected = deepcopy(old)
+    for key in _CLI_KEYS:
+        row = expected[key]
+        if not any("python3 -m app" in row[field] for field in ("stdout", "stderr")):
+            raise ValueError("Missing old CLI program name: " + key)
+        for field in ("stdout", "stderr"):
+            row[field] = row[field].replace("python3 -m app", "python -m work")
+    for key in _SEQUENCE_KEYS:
+        calls = expected[key]["trace"]
+        if not calls:
+            raise ValueError("Missing old subprocess trace: " + key)
+        for call in calls:
+            name, (argv, cwd_ok, check), kwargs = call
+            if name != "run" or argv[:2] != ["-m", "app"] or cwd_ok is not True or check is not False or kwargs:
+                raise ValueError("Unexpected old subprocess contract: " + key)
+            call[1][0] = ["-E", "-s", "-m", "work", *argv[2:]]
+    changed = {key for key in old if old[key] != new[key]}
+    if changed != _CLI_KEYS | _SEQUENCE_KEYS:
+        raise ValueError(f"Unexpected migration delta keys: {sorted(changed ^ (_CLI_KEYS | _SEQUENCE_KEYS))}")
+    compare_records(expected, new)
+    print(f"D4 exact intentional deltas: {len(changed)}; unchanged: {len(old)-len(changed)}")
 
 
 def compare_semantic(old, new):
@@ -117,7 +157,10 @@ def main(argv=None):
             first = observe("baseline", baseline, args.baseline_sha, home)
             second = observe("candidate", candidate, args.candidate_sha, home)
         compare_ids(first[0], second[0])
-        compare_records(first[1], second[1])
+        if layout(baseline) != "src" and layout(candidate) == "src":
+            compare_migration_records(first[1], second[1])
+        else:
+            compare_records(first[1], second[1])
         compare_semantic(first[2], second[2])
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"Verification failed: {error}", file=sys.stderr)

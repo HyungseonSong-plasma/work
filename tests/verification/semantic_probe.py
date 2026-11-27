@@ -6,13 +6,13 @@ import os
 from copy import deepcopy
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
-from github import actions, trigger
-from _snapshot_imports import library
+from _snapshot_imports import application, library
 
+actions, trigger = application("github.actions"), application("github.trigger")
 PRContext = library("workflow").PRContext
-from app.wiring import resolve_execution
-from app.commands import execute
-from app.commands.trigger import route_registry
+resolve_execution = application("app.wiring").resolve_execution
+execute = application("app.commands.execute")
+route_registry = application("app.commands.trigger").route_registry
 from tests.fixtures import ActionsTestContext, REPO, REF, SHA
 
 def capture(label, fn, expected):
