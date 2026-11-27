@@ -15,7 +15,8 @@ LIBRARIES = {
     "libs._github_transport": frozenset(),
     "libs.github": frozenset(("libs.frame", "libs._github_transport")),
     "libs.workflow": frozenset(("libs.command", "libs.github")),
-    "libs.testing": frozenset(("libs.frame",)),
+    "libs._test_grammar": frozenset(),
+    "libs.testing": frozenset(("libs.frame", "libs._test_grammar")),
 }
 LEGACY = ("app.framework", "github.framework", "tests.framework", "framework_tests",
           "tests.framework_tests")

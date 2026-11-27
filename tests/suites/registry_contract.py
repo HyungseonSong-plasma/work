@@ -334,6 +334,50 @@ class RegistryContract(TestSuite):
         self.assert_rejected(self.run_cases, (("valid", 1),), None)
         check.assert_not_called()
 
+    def test_static_grammar_bindings_preserve_identity(self):
+        from libs import testing, _test_grammar
+        for name in ("DECLARATION_CALLS", "EXPRESSION_NODES", "RUNNERS", "validate_method"):
+            with self.subTest(binding=name):
+                self.assertIs(getattr(testing, name), getattr(_test_grammar, name))
+
+    def test_static_shape_does_not_replace_runtime_callback_validation(self):
+        from libs.testing import TestSuite, validate_method
+        from unittest.mock import Mock, patch
+
+        callbacks = Mock()
+        def check(ctx, unexpected):
+            callbacks.check(ctx, unexpected)
+
+        def act(ctx):
+            callbacks.act(ctx)
+
+        def arrange(ctx):
+            callbacks.arrange(ctx)
+
+        compact = "def check(ctx, unexpected):\n        pass\n"
+        valid_act = "def act(ctx):\n        pass\n"
+        valid_arrange = "def arrange(ctx):\n        pass\n"
+        cases = (
+            ("compact", compact + "    self.run_contract(check=check)",
+             lambda: self.run_contract(check=check)),
+            ("split", valid_act + "    def check(ctx):\n        pass\n    " +
+             valid_arrange + "    self.run_contract(act, check, arrange=arrange)",
+             lambda: self.run_contract(act, act, arrange=arrange)),
+            ("cases", "cases = (('one',),)\n    " + compact +
+             "    self.run_cases(cases, check)", lambda: self.run_cases((("one",),), check)),
+            ("scenario", valid_act + "    " + compact + "    " +
+             valid_arrange + "    steps = (('one', act),)\n    self.run_scenario(steps, check, arrange=arrange)",
+             lambda: self.run_scenario((("one", act),), check, arrange=arrange)),
+        )
+        for name, body, run in cases:
+            with self.subTest(form=name):
+                self.assertIsNone(validate_method("def test_example(self):\n    " + body))
+                with patch.object(TestSuite, "context_type", Mock()) as context:
+                    with self.assertRaisesRegex(ValueError, "Invalid runner callback signature"):
+                        run()
+                    context.assert_not_called()
+                self.assertEqual(callbacks.mock_calls, [])
+
     def test_structure_validation_accepts_three_runner_forms(self):
         bodies = (
             "cases = ((\"a\", 1),)\n    def check(ctx, value):\n        pass\n    self.run_cases(cases, check)",
