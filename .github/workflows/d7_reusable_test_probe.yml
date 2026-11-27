@@ -1,0 +1,43 @@
+# FileRank: C
+name: D7 reusable workflow caller verification
+on:
+  push:
+    branches: [test/d7-reusable-workflow]
+    paths: ['.github/workflows/d7_reusable_test_probe.yml']
+permissions: {}
+jobs:
+  consumer:
+    permissions:
+      contents: read
+    uses: HyungseonSong-plasma/work/.github/workflows/reusable_test.yml@1f12e2621fa1c2b55c00ba8e5a8e5975d9f08b9f
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.13'
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: c21f73ae8f1bd1f8d80f1ae3955c57607cf85896
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 1f12e2621fa1c2b55c00ba8e5a8e5975d9f08b9f
+          path: candidate
+          persist-credentials: false
+      - name: Verify untouched production code and exact Q6 records
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C baseline rev-parse HEAD)" = "c21f73ae8f1bd1f8d80f1ae3955c57607cf85896"
+          test "$(git -C candidate rev-parse HEAD)" = "1f12e2621fa1c2b55c00ba8e5a8e5975d9f08b9f"
+          for path in src pyproject.toml MANIFEST.in .github/workflows/trigger.yml .github/workflows/single_run.yml .github/workflows/serial_run.yml .github/workflows/actions_delete.yml; do
+            test "$(git -C baseline rev-parse HEAD:$path)" = "$(git -C candidate rev-parse HEAD:$path)"
+          done
+          cd candidate
+          python -B -m unittest -v tests.verification.test_compare
+          python -B tests/verification/compare.py --baseline ../baseline --baseline-sha c21f73ae8f1bd1f8d80f1ae3955c57607cf85896 --candidate . --candidate-sha 1f12e2621fa1c2b55c00ba8e5a8e5975d9f08b9f
