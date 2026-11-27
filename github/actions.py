@@ -1,16 +1,18 @@
 # FileRank: C
-"""Exact Actions request, retention and deletion policies."""
+"""Actions wire contract, worker approval and reviewed batch deletion."""
 
 import json
 import re
-from datetime import datetime
 
 from config import require_deletion, load_registry
+from github._actions_retention import check_retention as _check_retention
 from libs.github import (CLIENT, validate_sha, review_repository,
                          require_default_ref, parse_execute_comment, validate_pr_number,
                          is_unchanged_comment)
 from libs.workflow import Context
 
+
+# Request and policy: one wire schema and fresh policy validation.
 
 _TARGET_FIELDS = ("run_id", "expected_head_sha", "expected_run_attempt")
 
@@ -84,122 +86,7 @@ def validate_actions_targets(targets, policy=None):
     return targets
 
 
-def _run_path(run):
-    path = run["path"]
-    if not isinstance(path, str) or not path:
-        raise ValueError("Unknown workflow path.")
-    return path.split("@", 1)[0]
-
-
-def _retention_order(run):
-    """Validate GitHub's UTC creation timestamp before comparing ranks."""
-    created = run.get("created_at")
-    if not isinstance(created, str) or not re.fullmatch(
-            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", created):
-        raise ValueError("Invalid successful-run creation timestamp.")
-    try:
-        datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ")
-    except ValueError as error:
-        raise ValueError("Invalid successful-run creation timestamp.") from error
-    return created, run["id"]
-
-
-def _check_retention(api, root, repository, repo_id, run, policy):
-    if run["id"] in policy["pinned_run_ids"]:
-        raise ValueError("Pinned Actions evidence.")
-    path = _run_path(run)
-    if path not in policy["protected_workflows"]:
-        return
-    workflow_id = run["workflow_id"]
-    if type(workflow_id) is not int or workflow_id <= 0:
-        raise ValueError("Invalid workflow ID.")
-    response = api("GET", f"{root}/actions/workflows/{workflow_id}/runs?status=success&per_page=100")
-    runs, total = response["workflow_runs"], response["total_count"]
-    if (not isinstance(runs, list) or type(total) is not int or total < 0
-            or len(runs) != min(total, 100)):
-        raise ValueError("Incomplete successful-run listing.")
-    previous, seen = None, set()
-    target_order = _retention_order(run) if run["conclusion"] == "success" else None
-    for item in runs:
-        if not (
-            item["workflow_id"] == workflow_id
-            and item["repository"]["id"] == repo_id
-            and item["repository"]["full_name"] == repository
-            and _run_path(item) == path
-            and item["status"] == "completed"
-            and item["conclusion"] == "success"
-            and type(item["id"]) is int and item["id"] > 0
-            and item["id"] not in seen
-        ):
-            raise ValueError("Unexpected successful-run metadata.")
-        order = _retention_order(item)
-        if previous is not None and order > previous:
-            raise ValueError("Successful-run listing not newest first.")
-        previous = order
-        seen.add(item["id"])
-        if item["id"] == run["id"] and (
-                order != target_order
-                or item.get("head_sha") != run["head_sha"]
-                or type(item.get("run_attempt")) is not int
-                or item["run_attempt"] != run["run_attempt"]):
-            raise ValueError("Successful target metadata differs from retention listing.")
-    # Absence is only consistent beyond a complete first page of a longer listing.
-    if target_order is not None and run["id"] not in seen:
-        if total <= len(runs) or previous is None or target_order >= previous:
-            raise ValueError("Successful target missing from retention listing.")
-    if run["id"] in {item["id"] for item in runs[:policy["keep_successful"]]}:
-        raise ValueError("Latest successful workflow run is retained.")
-
-
-def _review_run(api, root, repo, repository, target, policy):
-    endpoint = f"{root}/actions/runs/{target['run_id']}"
-    run = api("GET", endpoint)
-    if not (
-        run["id"] == target["run_id"]
-        and run["repository"]["id"] == repo["id"]
-        and run["repository"]["full_name"] == repository
-        and run["status"] == "completed"
-        and run["head_sha"] == target["expected_head_sha"]
-        and run["run_attempt"] == target["expected_run_attempt"]
-    ):
-        raise ValueError("Expected the reviewed completed run in this repository.")
-    _check_retention(api, root, repository, repo["id"], run, policy)
-    return endpoint, run
-
-
-def delete_actions_batch(api, remove, repository, run_ref, targets, current_run_id,
-                         report=print):
-    """Validate every target before the first DELETE, then revalidate each."""
-    require_deletion("actions")
-    policy = actions_policy()
-    validate_actions_targets(targets, policy)
-    if type(current_run_id) is not int or current_run_id <= 0:
-        raise ValueError("Invalid current run ID.")
-    if any(target["run_id"] == current_run_id for target in targets):
-        raise ValueError("Cannot delete the current workflow run.")
-    root, repo = review_repository(api, repository, run_ref)
-    reviewed = [_review_run(api, root, repo, repository, target, policy)
-                for target in targets]
-    results = []
-    for target, (endpoint, run) in zip(targets, reviewed):
-        fresh_endpoint, fresh = _review_run(api, root, repo, repository, target, policy)
-        if fresh_endpoint != endpoint or fresh != run:
-            raise ValueError("Run metadata changed before deletion.")
-        remove(endpoint)
-        result = f"Deleted Actions run: {target['run_id']}"
-        results.append(result)
-        report(result)
-    return results
-
-
-def delete_actions_run(api, remove, repository, run_ref, run_id,
-                       expected_head_sha, expected_run_attempt, current_run_id):
-    return delete_actions_batch(
-        api, remove, repository, run_ref,
-        [{"run_id": run_id, "expected_head_sha": expected_head_sha,
-          "expected_run_attempt": expected_run_attempt}], current_run_id,
-        report=lambda message: None)[0]
-
+# Worker approval: compare wire inputs before normalizing targets.
 
 def _request_from_args(args):
     """Build the exact single or batch request before checking approval."""
@@ -289,3 +176,55 @@ class ActionsContext(Context):
         request = parse_execute_comment(comment["body"])
         if actions_request(request) != inputs:
             raise ValueError("Source approval does not match dispatch inputs.")
+
+
+# Mutation: preflight the batch, then freshly review each target.
+
+def _review_run(api, root, repo, repository, target, policy):
+    endpoint = f"{root}/actions/runs/{target['run_id']}"
+    run = api("GET", endpoint)
+    if not (
+        run["id"] == target["run_id"]
+        and run["repository"]["id"] == repo["id"]
+        and run["repository"]["full_name"] == repository
+        and run["status"] == "completed"
+        and run["head_sha"] == target["expected_head_sha"]
+        and run["run_attempt"] == target["expected_run_attempt"]
+    ):
+        raise ValueError("Expected the reviewed completed run in this repository.")
+    _check_retention(api, root, repository, repo["id"], run, policy)
+    return endpoint, run
+
+
+def delete_actions_batch(api, remove, repository, run_ref, targets, current_run_id,
+                         report=print):
+    """Validate every target before the first DELETE, then revalidate each."""
+    require_deletion("actions")
+    policy = actions_policy()
+    validate_actions_targets(targets, policy)
+    if type(current_run_id) is not int or current_run_id <= 0:
+        raise ValueError("Invalid current run ID.")
+    if any(target["run_id"] == current_run_id for target in targets):
+        raise ValueError("Cannot delete the current workflow run.")
+    root, repo = review_repository(api, repository, run_ref)
+    reviewed = [_review_run(api, root, repo, repository, target, policy)
+                for target in targets]
+    results = []
+    for target, (endpoint, run) in zip(targets, reviewed):
+        fresh_endpoint, fresh = _review_run(api, root, repo, repository, target, policy)
+        if fresh_endpoint != endpoint or fresh != run:
+            raise ValueError("Run metadata changed before deletion.")
+        remove(endpoint)
+        result = f"Deleted Actions run: {target['run_id']}"
+        results.append(result)
+        report(result)
+    return results
+
+
+def delete_actions_run(api, remove, repository, run_ref, run_id,
+                       expected_head_sha, expected_run_attempt, current_run_id):
+    return delete_actions_batch(
+        api, remove, repository, run_ref,
+        [{"run_id": run_id, "expected_head_sha": expected_head_sha,
+          "expected_run_attempt": expected_run_attempt}], current_run_id,
+        report=lambda message: None)[0]

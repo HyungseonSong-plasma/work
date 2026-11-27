@@ -124,6 +124,52 @@ class DeletionContract(TestSuite):
 
         self.run_cases(cases, check)
 
+    def test_retention_evidence_validation_is_read_only(self):
+        cases = (
+            ("older", "older", None),
+            ("retained", "retained", "Latest successful workflow run is retained."),
+            ("missing", "missing", "Successful target missing from retention listing."),
+            ("mismatched_attempt", "attempt", "Successful target metadata differs from retention listing."),
+        )
+
+        def check(ctx, mode, expected):
+            from github._actions_retention import validate_successful_listing
+            path = ".github/workflows/trigger.yml"
+            run = dict(ctx.run_data, path=path, workflow_id=7, conclusion="success",
+                       created_at="2026-01-01T00:20:00Z")
+            newer = dict(run, id=20, created_at="2026-01-01T00:40:00Z")
+            rows = [newer, dict(run)]
+            if mode == "retained":
+                rows = [dict(run)]
+            elif mode == "missing":
+                rows = [newer]
+            elif mode == "attempt":
+                rows[1]["run_attempt"] = 2
+            listing = {"total_count": len(rows), "workflow_runs": rows}
+            policy = {"keep_successful": 1}
+            evidence = deepcopy((listing, run, policy))
+            if expected is None:
+                self.assertIsNone(validate_successful_listing(
+                    listing, REPO, 1, 7, path, run, policy))
+            else:
+                with self.assertRaises(ValueError) as error:
+                    validate_successful_listing(listing, REPO, 1, 7, path, run, policy)
+                self.assertEqual(str(error.exception), expected)
+            self.assertEqual((listing, run, policy), evidence)
+            ctx.api.assert_not_called()
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_retention_module_has_no_application_or_configuration_dependency(self):
+        def check(ctx):
+            from tests.fixtures import import_probe
+            result = import_probe(("github._actions_retention",),
+                                  ("app", "libs", "config", "tests", "github.actions"))
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        self.run_contract(check=check)
+
     def test_retention_requires_consistent_complete_first_page(self):
         cases = (
             ("complete_missing_newest", 1, 50, (40,), 1, False, None, False),
