@@ -34,6 +34,11 @@ def require_default_ref(ref, default):
         raise ValueError("Run only on the current default branch.")
 
 
+def is_unchanged_comment(comment):
+    """Check the original comment timestamps; callers own approval policy."""
+    return comment["created_at"] == comment["updated_at"]
+
+
 def parse_execute_comment(body):
     prefix = "/execute "
     if not isinstance(body, str) or not body.startswith(prefix):

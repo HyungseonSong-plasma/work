@@ -142,6 +142,33 @@ class ExecutionContract(TestSuite):
 
         self.run_contract(check=check)
 
+    def test_execution_membership_rejects_before_subprocess(self):
+        cases = (("empty", ()), ("unknown", ("unknown.py",)),
+                 ("late_unknown", ("pr_merge.py", "unknown.py")))
+
+        def check(ctx, executions):
+            run = Mock()
+            with self.assertRaisesRegex(ValueError, "^Unknown execution binding"):
+                execute_command.run_execution(executions, run=run)
+            run.assert_not_called()
+
+        self.run_cases(cases, check)
+
+    def test_execution_resolution_preserves_error_precedence(self):
+        cases = (
+            ("parameters_first", "unknown.py", "[]", "Parameters must be a JSON object"),
+            ("unknown_before_duplicate", "unknown.py - unknown.py", PARAMS,
+             "Every execution must be a registered command"),
+            ("duplicate", "pr_merge.py - pr_merge.py", PARAMS, "Duplicate execution"),
+            ("reverse", "branch_delete.py - pr_merge.py", PARAMS, "PR merge must precede"),
+        )
+
+        def check(ctx, expression, parameters, message):
+            with self.assertRaisesRegex(ValueError, message):
+                resolve_execution(expression, parameters)
+
+        self.run_cases(cases, check)
+
     def test_execution_identifiers_need_no_physical_scripts(self):
         def check(ctx):
             self.assertFalse((ROOT / "scripts").exists())
