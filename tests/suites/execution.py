@@ -46,7 +46,7 @@ class ExecutionContract(TestSuite):
         self.assertEqual(run.call_args.args[0][-2:], ["delete", "branch"])
         self.assertEqual(run.call_count, 1)
 
-    def test_task_parameter_validation(self):
+    def test_pr_parameter_validation(self):
         with patch.dict(os.environ, {"EXECUTION_INPUTS": "{}", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_RUN_ATTEMPT": "1"}, clear=True):
             with self.assertRaises(ValueError):
                 pr_context("pr_merge.py")
@@ -57,7 +57,7 @@ class ExecutionContract(TestSuite):
                                      "GITHUB_REPOSITORY": REPO, "GITHUB_REF": REF},
                         clear=True):
             with patch.object(merge_command.pr_merge, "merge_pr", return_value=SHA) as merge:
-                self.assertEqual(task_command.task("pr_merge.py"), 0)
+                self.assertEqual(merge_command.MergeCommand.execute(None), 0)
                 merge.assert_called_once_with(merge_command.github_api, REPO, REF, "7", SHA)
 
     def test_branch_disabled_blocks_before_api(self):
