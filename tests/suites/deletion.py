@@ -19,9 +19,14 @@ class DeletionContract(TestSuite):
     context_type = ActionsTestContext
 
     def test_actions_delete_exact_run(self):
-        self.assertEqual(deletion.delete("actions", **self.ctx.parameters),
-                         "Deleted Actions run: 12")
-        self.ctx.remove.assert_called_once_with(f"repos/{REPO}/actions/runs/12")
+        def act(ctx):
+            return deletion.delete("actions", **ctx.parameters)
+
+        def check(ctx, result):
+            self.assertEqual(result, "Deleted Actions run: 12")
+            ctx.remove.assert_called_once_with(f"repos/{REPO}/actions/runs/12")
+
+        self.run_contract(act, check)
 
     def test_branch_target_dispatch(self):
         handler = Mock(return_value="Deleted branch")

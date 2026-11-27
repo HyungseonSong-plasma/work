@@ -1,7 +1,7 @@
 # FileRank: C
 """Common offline test-suite model and independent deterministic fixtures."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from copy import deepcopy
 import json
 import os
@@ -154,3 +154,61 @@ class TestSuite(unittest.TestCase):
         for name, *values in rows:
             with self.subTest(case=name):
                 check(self.context_type(), *values)
+
+    def run_contract(self, act, check, *, arrange=None, raises=None):
+        """Run one action and its checks in a fresh, optionally scoped context.
+
+        An expected exception applies only to act, never setup or check.
+        Arrange, when supplied, returns a non-suppressing context manager.
+        """
+        self._validate_callbacks(act, check, arrange=arrange)
+        if raises is not None and (
+                not isinstance(raises, type) or not issubclass(raises, Exception)):
+            raise ValueError("Expected an exception class.")
+        ctx = self.context_type()
+        completed = False
+        with (nullcontext() if arrange is None else arrange(ctx)):
+            if raises is None:
+                result = act(ctx)
+            else:
+                with self.assertRaises(raises) as error:
+                    act(ctx)
+                result = error.exception
+            check(ctx, result)
+            completed = True
+        self.assertTrue(completed, "Contract scope suppressed a failure.")
+
+    def run_scenario(self, steps, check, *, arrange=None):
+        """Run ordered named steps and final checks in one fresh context.
+
+        Stop immediately on unexpected failure; annotate the failing step
+        without swallowing it so that the surrounding scope is unwound.
+        """
+        self._validate_callbacks(check, arrange=arrange)
+        steps = tuple(steps)
+        if not steps or any(
+                not isinstance(step, tuple) or len(step) != 2
+                or not isinstance(step[0], str) or not step[0].strip()
+                or not callable(step[1]) for step in steps):
+            raise ValueError("Expected nonempty named callable steps.")
+        names = [name for name, _ in steps]
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate scenario step name.")
+        ctx = self.context_type()
+        completed = False
+        with (nullcontext() if arrange is None else arrange(ctx)):
+            for name, step in steps:
+                try:
+                    step(ctx)
+                except Exception as error:
+                    error.add_note(f"Scenario step: {name}")
+                    raise
+            check(ctx)
+            completed = True
+        self.assertTrue(completed, "Scenario scope suppressed a failure.")
+
+    @staticmethod
+    def _validate_callbacks(*callbacks, arrange=None):
+        if not all(callable(callback) for callback in callbacks) or (
+                arrange is not None and not callable(arrange)):
+            raise ValueError("Expected callable runner callbacks.")
