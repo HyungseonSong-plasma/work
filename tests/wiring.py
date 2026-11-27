@@ -4,7 +4,7 @@
 import sys
 
 from config import load_names
-from libs.testing import SuiteRegistry
+from work.libs.testing import SuiteRegistry
 
 SUITES = SuiteRegistry()
 register = SUITES.register

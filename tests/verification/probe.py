@@ -12,7 +12,9 @@ from app import cli
 from app.commands import trigger as trigger_command
 from github import delete, merge
 from github import actions
-from libs import github as transport
+from _snapshot_imports import library
+
+transport = library("github")
 
 def merge_operation(api, repository, ref, number, sha):
     return merge.MERGE.execute(merge.MergeOperation(api, repository, ref, number, sha))
@@ -205,11 +207,13 @@ for args in ([],["trigger"],["execute"],["merge"],["delete"],["test"]):
     record("cli:help:"+"/".join(args),lambda:cli.main(args+["--help"]),Mock())
 for args in ([],["unknown"],["execute"],["delete","unknown"],["execute","--serial-stage","3"]):
     record("cli:invalid:"+"/".join(args),lambda:cli.main(args),Mock())
-from libs.command import Command, CommandPlan, local_plan, validate_command
+_command = library("command")
+Command, CommandPlan = _command.Command, _command.CommandPlan
+local_plan, validate_command = _command.local_plan, _command.validate_command
 from app.wiring import register as register_command, configured_commands, COMMANDS, resolve_execution
 registry_module = "app.wiring"
 from tests import suites
-from libs.testing import TestSuite
+TestSuite = library("testing").TestSuite
 from tests.wiring import register as register_suite, build_suite, SUITES
 WorkflowRegistry = transport.WorkflowRegistry
 
@@ -280,7 +284,8 @@ class Targeted(Command):
     help="target probe"
     targets=(("branch",local_plan(lambda ctx,args:7)),)
 record("command_lifecycle:unknown_target",lambda:Targeted.execute(SimpleNamespace(target="invalid")),Mock())
-from libs.workflow import PRContext, Context
+_workflow = library("workflow")
+PRContext, Context = _workflow.PRContext, _workflow.Context
 from github.actions import ActionsContext
 def make_pr(execution,env):
     return PRContext(execution,env=env,resolve=resolve_execution)
@@ -457,7 +462,7 @@ for label, request in (
     ("bool", {"execution":"delete actions","run_id":True,"expected_head_sha":SHA,"expected_run_attempt":1}),
     ("batch_extra", {"execution":"delete actions","runs":[{"run_id":12,"expected_head_sha":SHA,"expected_run_attempt":1,"extra":True}]})):
     record("actions_wire:"+label,lambda:actions.actions_request(request),Mock())
-from libs.testing import validate_method
+validate_method = library("testing").validate_method
 from textwrap import dedent
 def method(body):
     return "def test_sample(self):\n" + "\n".join("    "+line for line in body.splitlines())+"\n"

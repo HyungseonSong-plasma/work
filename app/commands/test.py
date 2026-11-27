@@ -4,7 +4,7 @@
 import unittest
 
 from app.wiring import register
-from libs.command import Command, local_plan
+from work.libs.command import Command, local_plan
 
 
 def action(ctx, args):

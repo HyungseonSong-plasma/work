@@ -6,10 +6,10 @@ import re
 from functools import partial
 
 from config import load_names
-from libs.command import CommandRegistry
-from libs.workflow import (context_plan, pr_plan as workflow_pr_plan,
+from work.libs.command import CommandRegistry
+from work.libs.workflow import (context_plan, pr_plan as workflow_pr_plan,
                            require_execution_membership)
-from libs.frame import validate_unique
+from work.libs.frame import validate_unique
 
 COMMANDS = CommandRegistry()
 register = COMMANDS.register

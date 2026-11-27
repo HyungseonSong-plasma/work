@@ -7,7 +7,7 @@ from subprocess import SubprocessError
 
 from app import commands  # Load the explicitly registered command modules.
 from app.wiring import configured_commands
-from libs.command import run_cli
+from work.libs.command import run_cli
 
 
 def _report_error(command, error):

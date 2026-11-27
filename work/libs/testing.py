@@ -6,9 +6,9 @@ import unittest
 from contextlib import nullcontext
 from types import SimpleNamespace
 
-from libs.frame import (Registry, select_registered, validate_callback,
+from work.libs.frame import (Registry, select_registered, validate_callback,
                         validate_overrides, validate_unique)
-from libs._test_grammar import (DECLARATION_CALLS, EXPRESSION_NODES, RUNNERS,
+from work.libs._test_grammar import (DECLARATION_CALLS, EXPRESSION_NODES, RUNNERS,
                                validate_method)
 
 

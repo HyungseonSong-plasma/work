@@ -9,9 +9,9 @@ from unittest.mock import Mock, call, patch
 from github.actions import ActionsContext
 from types import SimpleNamespace
 from github import actions, delete as deletion
-from libs.github import GitHubClient
+from work.libs.github import GitHubClient
 from tests.wiring import register
-from libs.testing import TestSuite
+from work.libs.testing import TestSuite
 from tests.fixtures import ActionsTestContext, REPO, REF, SHA
 from github import trigger
 from app.commands.trigger import route_registry
@@ -165,7 +165,7 @@ class DeletionContract(TestSuite):
         def check(ctx):
             from tests.fixtures import import_probe
             result = import_probe(("github._actions_retention",),
-                                  ("app", "libs", "config", "tests", "github.actions"))
+                                  ("app", "work.libs", "config", "tests", "github.actions"))
             self.assertEqual(result.returncode, 0, result.stderr)
 
         self.run_contract(check=check)
@@ -769,7 +769,7 @@ class DeletionContract(TestSuite):
                 return "Done"
 
             with patch.object(deletion, "delete_branch", side_effect=branch) as handler, \
-                    patch("libs._github_transport.subprocess.run",
+                    patch("work.libs._github_transport.subprocess.run",
                                  side_effect=[None, SimpleNamespace(returncode=status)]) as run:
                 args = (ctx.api, REPO, REF, "7", SHA, "remote")
                 if status:

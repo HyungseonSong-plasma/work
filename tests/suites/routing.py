@@ -7,8 +7,8 @@ from unittest.mock import Mock, MagicMock, patch
 from github import trigger
 from app.commands.trigger import route_registry
 from app.wiring import resolve_execution
-from libs.github import WorkflowRegistry
-from libs.testing import TestSuite
+from work.libs.github import WorkflowRegistry
+from work.libs.testing import TestSuite
 from tests.fixtures import WorkflowTestContext, REPO, REF
 from tests.wiring import register
 
@@ -110,7 +110,7 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_shared_validation_rejects_invalid_types(self):
-        from libs.github import validate_sha, validate_pr_number, require_default_ref
+        from work.libs.github import validate_sha, validate_pr_number, require_default_ref
         cases = (
             ("pr_boolean", validate_pr_number, (True,)),
             ("pr_none", validate_pr_number, (None,)),
@@ -145,7 +145,7 @@ class RoutingContract(TestSuite):
         cases = (("json_get", "GET", None), ("json_put", "PUT", {"sha": "a" * 40}))
 
         def check(ctx, method, payload):
-            from libs.github import GitHubClient
+            from work.libs.github import GitHubClient
             from io import BytesIO
             import os
             response = MagicMock()
@@ -179,7 +179,7 @@ class RoutingContract(TestSuite):
         )
 
         def check(ctx, method, status, allowed):
-            from libs.github import GitHubClient
+            from work.libs.github import GitHubClient
             import os
             response = MagicMock()
             response.__enter__.return_value.status = status
@@ -214,7 +214,7 @@ class RoutingContract(TestSuite):
                  ("json_timeout", "json"))
 
         def check(ctx, operation):
-            from libs.github import GitHubClient
+            from work.libs.github import GitHubClient
             import os
             send = Mock(side_effect=TimeoutError("ambiguous response"))
             with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.example.test",
@@ -232,7 +232,7 @@ class RoutingContract(TestSuite):
         self.run_cases(cases, check)
 
     def test_rest_json_transport_rejects_invalid_response_and_closes(self):
-        from libs.github import GitHubClient
+        from work.libs.github import GitHubClient
         from io import BytesIO
         import json
         import os
@@ -257,7 +257,7 @@ class RoutingContract(TestSuite):
     def test_domain_imports_without_application_layer(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("libs.github", "github.trigger", "github.actions", "github.delete", "github.merge"),
+            result = import_probe(("work.libs.github", "github.trigger", "github.actions", "github.delete", "github.merge"),
                                   ("app",))
             self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -286,8 +286,8 @@ class RoutingContract(TestSuite):
 
     def test_transport_bindings_preserve_identity(self):
         def check(ctx):
-            from libs.github import CLIENT, GitHubClient, git_session
-            from libs import _github_transport
+            from work.libs.github import CLIENT, GitHubClient, git_session
+            from work.libs import _github_transport
             self.assertIs(CLIENT, _github_transport.CLIENT)
             self.assertIs(GitHubClient, _github_transport.GitHubClient)
             self.assertIs(git_session, _github_transport.git_session)
@@ -299,7 +299,7 @@ class RoutingContract(TestSuite):
         def check(ctx):
             import os
             from io import BytesIO
-            from libs.github import GitHubClient
+            from work.libs.github import GitHubClient
 
             response = MagicMock()
             response.__enter__.side_effect = [BytesIO(b'{}'), BytesIO(b'{}')]
@@ -327,7 +327,7 @@ class RoutingContract(TestSuite):
     def test_github_library_import_is_domain_independent(self):
         def check(ctx):
             from tests.fixtures import import_probe
-            result = import_probe(("libs.github",),
+            result = import_probe(("work.libs.github",),
                                   ("app", "tests", "github", "config"))
             self.assertEqual(result.returncode, 0, result.stderr)
 

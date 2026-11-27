@@ -3,7 +3,7 @@
 
 from dataclasses import dataclass
 
-from libs.github import (JsonMutation, guarded_json_mutation, validate_pr_number,
+from work.libs.github import (JsonMutation, guarded_json_mutation, validate_pr_number,
                          validate_sha, review_repository, matches_pr_head)
 
 

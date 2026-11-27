@@ -5,8 +5,8 @@ from urllib.parse import quote
 
 from config import require_deletion
 from github.actions import delete_actions_batch, delete_actions_run
-from libs.github import review_repository, matches_pr_head
-from libs.github import git_session
+from work.libs.github import review_repository, matches_pr_head
+from work.libs.github import git_session
 
 
 def _used_by_open_pr(api, root, repository, branch):

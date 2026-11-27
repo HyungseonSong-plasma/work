@@ -4,10 +4,10 @@
 from contextlib import contextmanager
 from unittest.mock import Mock, patch
 
-from libs.testing import TestSuite
+from work.libs.testing import TestSuite
 from tests.fixtures import TestContext
 from tests.wiring import SUITES, build_suite, register
-from libs.testing import validate_method
+from work.libs.testing import validate_method
 
 
 @register("registry")
@@ -335,13 +335,13 @@ class RegistryContract(TestSuite):
         check.assert_not_called()
 
     def test_static_grammar_bindings_preserve_identity(self):
-        from libs import testing, _test_grammar
+        from work.libs import testing, _test_grammar
         for name in ("DECLARATION_CALLS", "EXPRESSION_NODES", "RUNNERS", "validate_method"):
             with self.subTest(binding=name):
                 self.assertIs(getattr(testing, name), getattr(_test_grammar, name))
 
     def test_static_shape_does_not_replace_runtime_callback_validation(self):
-        from libs.testing import TestSuite, validate_method
+        from work.libs.testing import TestSuite, validate_method
         from unittest.mock import Mock, patch
 
         callbacks = Mock()
@@ -390,7 +390,7 @@ class RegistryContract(TestSuite):
                 validate_method("def test_example(self):\n    " + body)
 
     def test_runner_grammar_preserves_form_and_error_precedence(self):
-        from libs.testing import RUNNERS
+        from work.libs.testing import RUNNERS
 
         self.assertEqual(RUNNERS, frozenset(("run_cases", "run_contract", "run_scenario")))
         compact = "def check(ctx):\n    pass\n"
@@ -473,7 +473,7 @@ class RegistryContract(TestSuite):
                 self.assert_rejected(build_suite, names=["registry"], registered={"registry": case})
 
     def test_shared_registry_rejects_duplicate_before_validation(self):
-        from libs.frame import Registry
+        from work.libs.frame import Registry
         registry = Registry()
         validator = Mock()
         first = object()
@@ -495,7 +495,7 @@ class RegistryContract(TestSuite):
         self.assertEqual(list(registry), ["first"])
 
     def test_shared_registry_selection_preserves_distinct_policies(self):
-        from libs.frame import Registry, select_registered, validate_unique
+        from work.libs.frame import Registry, select_registered, validate_unique
         registry = Registry(first=1, second=2)
         self.assertEqual(list(select_registered(registry, ("second", "first"),
                                                unknown="unknown", complete=True).items()),
@@ -512,7 +512,7 @@ class RegistryContract(TestSuite):
             validate_unique(("first", "first"), "duplicate")
 
     def test_shared_callback_validation_preserves_caller_errors(self):
-        from libs.frame import validate_callback
+        from work.libs.frame import validate_callback
         for callback in (None, lambda: None, lambda x, y: None):
             for error_type in (TypeError, ValueError):
                 with self.subTest(callback=callback, error=error_type):
@@ -522,7 +522,7 @@ class RegistryContract(TestSuite):
             validate_callback(callback, 1, error_type=ValueError, message="signature")
 
     def test_shared_override_validation_handles_class_and_instance_methods(self):
-        from libs.frame import validate_overrides
+        from work.libs.frame import validate_overrides
 
         class Base:
             @classmethod
@@ -552,12 +552,12 @@ class RegistryContract(TestSuite):
 
     def test_shared_frame_import_is_domain_independent(self):
         from tests.fixtures import import_probe
-        result = import_probe(("libs.frame",),
+        result = import_probe(("work.libs.frame",),
                               ("app", "tests", "github", "config"))
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_frame_contract_rejects_invalid_declarations(self):
-        from libs.frame import FrameContract
+        from work.libs.frame import FrameContract
         for stages in ([], (), ("",), ("not a name",), ("prepare", 1)):
             with self.subTest(stages=stages):
                 with self.assertRaises(TypeError):
@@ -566,7 +566,7 @@ class RegistryContract(TestSuite):
             FrameContract(("prepare", "prepare"))
 
     def test_frame_binding_requires_exact_callbacks_before_execution(self):
-        from libs.frame import FrameContract
+        from work.libs.frame import FrameContract
         contract = FrameContract(("prepare", "mutate"))
         prepare = Mock()
         for callbacks in ({"prepare": prepare}, {"prepare": prepare, "mutate": None},
@@ -578,7 +578,7 @@ class RegistryContract(TestSuite):
         prepare.assert_not_called()
 
     def test_frame_order_is_contract_owned_and_threads_results(self):
-        from libs.frame import FrameContract
+        from work.libs.frame import FrameContract
         observed = Mock()
         prepare = Mock(side_effect=lambda ctx: ctx + 1)
         validate = Mock(side_effect=lambda ctx: ctx * 2)
@@ -592,7 +592,7 @@ class RegistryContract(TestSuite):
         self.assertEqual(observed.mock_calls, [call.prepare(3), call.validate(4), call.mutate(8)])
 
     def test_frame_stops_at_every_failed_stage(self):
-        from libs.frame import FrameContract
+        from work.libs.frame import FrameContract
         names = ("prepare", "review", "validate", "mutate", "confirm")
         for failure in names:
             with self.subTest(failure=failure):
@@ -610,7 +610,7 @@ class RegistryContract(TestSuite):
 
     def test_frame_binding_is_immutable_and_runner_cannot_be_overridden(self):
         from dataclasses import FrozenInstanceError
-        from libs.frame import Frame, FrameContract
+        from work.libs.frame import Frame, FrameContract
         contract = FrameContract(("prepare",))
         frame = contract.bind(prepare=lambda ctx: ctx)
         with self.assertRaises(FrozenInstanceError):
@@ -626,13 +626,13 @@ class RegistryContract(TestSuite):
 
     def test_testing_library_import_is_domain_independent(self):
         from tests.fixtures import import_probe, ROOT
-        result = import_probe(("libs.testing",),
+        result = import_probe(("work.libs.testing",),
                               ("app", "tests", "github", "config"))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((ROOT / "tests" / "framework").exists())
 
     def test_suite_registry_isolated_and_default_context_is_generic(self):
-        from libs.testing import SuiteRegistry
+        from work.libs.testing import SuiteRegistry
         first, second = SuiteRegistry(), SuiteRegistry()
 
         @first.register("one")
@@ -657,7 +657,7 @@ class RegistryContract(TestSuite):
         self.assertFalse(hasattr(contexts[0], "cli_help"))
 
     def test_suite_self_test_exemption_requires_exact_pair(self):
-        from libs.testing import SuiteRegistry
+        from work.libs.testing import SuiteRegistry
         registry = SuiteRegistry()
 
         class Direct(TestSuite):
@@ -679,7 +679,7 @@ class RegistryContract(TestSuite):
 
     def test_suite_loader_coverage_remains_required_for_exempt_class(self):
         import unittest
-        from libs.testing import SuiteRegistry
+        from work.libs.testing import SuiteRegistry
 
         class Direct(TestSuite):
             def test_first(self):

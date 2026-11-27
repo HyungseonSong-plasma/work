@@ -1,10 +1,10 @@
 # FileRank: C
 """Branch and Actions deletion command with independent target validation."""
 
-from libs.command import Command
+from work.libs.command import Command
 from app.wiring import register, pr_plan, actions_plan
 from github.delete import delete
-from libs.github import CLIENT
+from work.libs.github import CLIENT
 
 
 def check_branch_inputs(args):

@@ -6,10 +6,10 @@ import re
 
 from config import require_deletion, load_registry
 from github._actions_retention import check_retention as _check_retention
-from libs.github import (CLIENT, validate_sha, review_repository,
+from work.libs.github import (CLIENT, validate_sha, review_repository,
                          require_default_ref, parse_execute_comment, validate_pr_number,
                          is_unchanged_comment)
-from libs.workflow import Context
+from work.libs.workflow import Context
 
 
 # Request and policy: one wire schema and fresh policy validation.

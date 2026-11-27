@@ -4,7 +4,7 @@
 import json
 
 from github.actions import actions_request
-from libs.github import (CLIENT, validate_sha, validate_pr_number, require_default_ref,
+from work.libs.github import (CLIENT, validate_sha, validate_pr_number, require_default_ref,
                          parse_execute_comment, is_unchanged_comment)
 
 
