@@ -2,8 +2,6 @@
 name: Single Run
 
 on:
-  issue_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       execution:
@@ -16,22 +14,19 @@ on:
         default: '{}'
         type: string
 
+      request_id:
+        description: Optional trigger comment reference
+        required: false
+        default: ''
+        type: string
+
+run-name: ${{ inputs.execution }} ${{ inputs.request_id }}
 permissions: {}
 
 jobs:
   execute:
-    name: ${{ (contains(inputs.execution, 'pr_merge.py') || contains(github.event.comment.body, 'pr_merge.py')) && 'Merge' || 'Delete' }}
-    if: >-
-      ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
-          ((github.event_name == 'workflow_dispatch' && !contains(inputs.execution, ' - ')) ||
-           (github.event_name == 'issue_comment' &&
-            github.run_attempt == '1' &&
-            github.event.issue.pull_request &&
-            github.event.comment.user.id == github.event.repository.owner.id &&
-            github.event.sender.id == github.event.repository.owner.id &&
-            github.event.comment.author_association == 'OWNER' &&
-            startsWith(github.event.comment.body, '/execute ') &&
-            !contains(github.event.comment.body, ' - '))) }}
+    name: ${{ contains(inputs.execution, 'pr_merge.py') && 'Merge' || 'Delete' }}
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_attempt == '1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
