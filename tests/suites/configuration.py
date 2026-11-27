@@ -122,6 +122,13 @@ class ConfigurationContract(TestSuite):
         cases = (
             ("frame_stdlib", "libs/frame.py", "from inspect import signature", True),
             ("workflow_command", "libs/workflow.py", "from libs.command import CommandPlan", True),
+            ("transport_stdlib", "libs/_github_transport.py", "from urllib.request import Request", True),
+            ("github_transport", "libs/github.py", "from libs._github_transport import GitHubClient", True),
+            ("transport_reverse", "libs/_github_transport.py", "from libs.github import CLIENT", False),
+            ("transport_frame", "libs/_github_transport.py", "from libs.frame import Frame", False),
+            ("workflow_private_transport", "libs/workflow.py", "from libs._github_transport import CLIENT", False),
+            ("app_private_transport", "app/cli.py", "from libs._github_transport import CLIENT", False),
+            ("domain_private_transport", "github/delete.py", "from libs._github_transport import git_session", False),
             ("relative_frame", "libs/github.py", "from . import frame", True),
             ("package_frame", "libs/command.py", "from libs import frame", True),
             ("github_config", "github/trigger.py", "def route():\n    from config import load_names", True),
@@ -185,6 +192,7 @@ class ConfigurationContract(TestSuite):
         cases = (
             ("frame", "libs.frame", ("app", "github", "config", "tests")),
             ("command", "libs.command", ("app", "github", "config", "tests")),
+            ("transport", "libs._github_transport", ("app", "github", "config", "tests", "libs.frame", "libs.github", "libs.command", "libs.workflow", "libs.testing")),
             ("github", "libs.github", ("app", "github", "config", "tests")),
             ("workflow", "libs.workflow", ("app", "github", "config", "tests")),
             ("testing", "libs.testing", ("app", "github", "config", "tests")),

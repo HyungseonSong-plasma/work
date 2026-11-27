@@ -284,6 +284,46 @@ class RoutingContract(TestSuite):
 
         self.run_contract(act, check, arrange=arrange, raises=ValueError)
 
+    def test_transport_bindings_preserve_identity(self):
+        def check(ctx):
+            from libs.github import CLIENT, GitHubClient, git_session
+            from libs import _github_transport
+            self.assertIs(CLIENT, _github_transport.CLIENT)
+            self.assertIs(GitHubClient, _github_transport.GitHubClient)
+            self.assertIs(git_session, _github_transport.git_session)
+            self.assertIs(type(CLIENT), GitHubClient)
+
+        self.run_contract(check=check)
+
+    def test_transport_reads_current_environment_on_each_request(self):
+        def check(ctx):
+            import os
+            from io import BytesIO
+            from libs.github import GitHubClient
+
+            response = MagicMock()
+            response.__enter__.side_effect = [BytesIO(b'{}'), BytesIO(b'{}')]
+            send = Mock(return_value=response)
+            with patch.dict(os.environ, {}, clear=True):
+                client = GitHubClient(send)
+                with patch.dict(os.environ, {"GITHUB_API_URL": "https://first.example.test/",
+                                             "GH_TOKEN": "first-fixture"}):
+                    self.assertEqual(client.request("GET", "repos/example/work"), {})
+                with patch.dict(os.environ, {"GITHUB_API_URL": "https://second.example.test",
+                                             "GH_TOKEN": "second-fixture"}):
+                    self.assertEqual(client.request("GET", "repos/example/work"), {})
+            requests = [entry.args[0] for entry in send.call_args_list]
+            self.assertEqual([request.full_url for request in requests], [
+                "https://first.example.test/repos/example/work",
+                "https://second.example.test/repos/example/work"])
+            self.assertEqual([request.get_header("Authorization") for request in requests],
+                             ["Bearer first-fixture", "Bearer second-fixture"])
+            self.assertEqual([entry.kwargs for entry in send.call_args_list],
+                             [{"timeout": 30}, {"timeout": 30}])
+            self.assertEqual(response.__exit__.call_count, 2)
+
+        self.run_contract(check=check)
+
     def test_github_library_import_is_domain_independent(self):
         def check(ctx):
             from tests.fixtures import import_probe
