@@ -3,7 +3,6 @@
 
 from contextlib import contextmanager, nullcontext
 from copy import deepcopy
-from inspect import signature
 import json
 import os
 import subprocess
@@ -13,6 +12,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+from libs.frame import validate_callback, validate_unique
 
 SHA = "a" * 40
 PARAMS = json.dumps({"pr_number": 7, "expected_head_sha": SHA})
@@ -160,8 +161,7 @@ class TestSuite(unittest.TestCase):
                            not isinstance(row[0], str) or not row[0].strip() for row in rows):
             raise ValueError("Expected nonempty named case rows.")
         names = [row[0] for row in rows]
-        if len(names) != len(set(names)):
-            raise ValueError("Duplicate case name.")
+        validate_unique(names, "Duplicate case name.")
         for _, *values in rows:
             self._validate_arity(check, 1 + len(values))
         for name, *values in rows:
@@ -226,8 +226,7 @@ class TestSuite(unittest.TestCase):
                 or not callable(step[1]) for step in steps):
             raise ValueError("Expected nonempty named callable steps.")
         names = [name for name, _ in steps]
-        if len(names) != len(set(names)):
-            raise ValueError("Duplicate scenario step name.")
+        validate_unique(names, "Duplicate scenario step name.")
         for _, step in steps:
             self._validate_arity(step, 1)
         ctx = self.context_type()
@@ -251,7 +250,5 @@ class TestSuite(unittest.TestCase):
 
     @staticmethod
     def _validate_arity(callback, count):
-        try:
-            signature(callback).bind(*([None] * count))
-        except (TypeError, ValueError) as error:
-            raise ValueError("Invalid runner callback signature.") from error
+        validate_callback(callback, count, error_type=ValueError,
+                          message="Invalid runner callback signature.")

@@ -5,8 +5,9 @@ import json
 import re
 
 from config import load_names
+from libs.frame import Registry, select_registered, validate_unique
 
-COMMANDS = {}
+COMMANDS = Registry()
 
 
 def register(name):
@@ -16,22 +17,17 @@ def register(name):
 
         if not isinstance(name, str) or not name or name.startswith("-"):
             raise ValueError("Invalid command name.")
-        if name in COMMANDS:
-            raise ValueError(f"Duplicate command: {name}")
-        validate_command(command)
-        COMMANDS[name] = command
-        return command
+        return COMMANDS.add(name, command, duplicate=f"Duplicate command: {name}",
+                            validate=validate_command)
     return decorator
 
 
 def configured_commands():
     """Select only explicitly registered implementations named in configuration."""
     names = load_names("commands")
-    if any(name not in COMMANDS for name in names):
-        raise ValueError("Unknown configured command.")
+    selected = select_registered(COMMANDS, names, unknown="Unknown configured command.")
     from app.framework.model import validate_command
 
-    selected = {name: COMMANDS[name] for name in names}
     for command in selected.values():
         validate_command(command)
     return selected
@@ -77,8 +73,7 @@ def resolve_execution(expression, parameters):
     routes = workflow_commands()
     if any(name not in routes for name in names):
         raise ValueError("Every execution must be a registered command.")
-    if len(names) != len(set(names)):
-        raise ValueError("Duplicate execution is not allowed.")
+    validate_unique(names, "Duplicate execution is not allowed.")
     if {"pr_merge.py", "branch_delete.py"}.issubset(names):
         if names.index("pr_merge.py") > names.index("branch_delete.py"):
             raise ValueError("PR merge must precede branch deletion.")

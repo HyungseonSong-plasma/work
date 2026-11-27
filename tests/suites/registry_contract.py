@@ -378,3 +378,92 @@ class RegistryContract(TestSuite):
             with self.subTest(case=case.__name__):
                 self.assert_rejected(build_suite, names=["example"], registered={"example": case})
                 self.assert_rejected(build_suite, names=["registry"], registered={"registry": case})
+
+    def test_shared_registry_rejects_duplicate_before_validation(self):
+        from libs.frame import Registry
+        registry = Registry()
+        validator = Mock()
+        first = object()
+        self.assertIs(registry.add("first", first, duplicate="duplicate", validate=validator), first)
+        validator.assert_called_once_with(first)
+        validator.reset_mock()
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            registry.add("first", object(), duplicate="duplicate", validate=validator)
+        validator.assert_not_called()
+        self.assertIs(registry.resolve("first", unknown="unknown"), first)
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            registry.resolve("missing", unknown="unknown")
+        validator.side_effect = TypeError("invalid")
+        with self.assertRaisesRegex(TypeError, "invalid"):
+            registry.add("second", object(), duplicate="duplicate", validate=validator)
+        self.assertEqual(list(registry), ["first"])
+        with patch.dict(registry, {"temporary": object()}):
+            self.assertEqual(list(registry), ["first", "temporary"])
+        self.assertEqual(list(registry), ["first"])
+
+    def test_shared_registry_selection_preserves_distinct_policies(self):
+        from libs.frame import Registry, select_registered, validate_unique
+        registry = Registry(first=1, second=2)
+        self.assertEqual(list(select_registered(registry, ("second", "first"),
+                                               unknown="unknown", complete=True).items()),
+                         [("second", 2), ("first", 1)])
+        self.assertEqual(select_registered(registry, ("second",), unknown="unknown"),
+                         {"second": 2})
+        for names, complete in ((("missing",), False), (("first",), True),
+                                (("first", "second", "missing"), True)):
+            with self.subTest(names=names, complete=complete):
+                with self.assertRaisesRegex(ValueError, "unknown"):
+                    select_registered(registry, names, unknown="unknown", complete=complete)
+        validate_unique(("first", "second"), "duplicate")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            validate_unique(("first", "first"), "duplicate")
+
+    def test_shared_callback_validation_preserves_caller_errors(self):
+        from libs.frame import validate_callback
+        for callback in (None, lambda: None, lambda x, y: None):
+            for error_type in (TypeError, ValueError):
+                with self.subTest(callback=callback, error=error_type):
+                    with self.assertRaisesRegex(error_type, "signature"):
+                        validate_callback(callback, 1, error_type=error_type, message="signature")
+        for callback in (lambda x: None, lambda *args: None, lambda x, y=1: None):
+            validate_callback(callback, 1, error_type=ValueError, message="signature")
+
+    def test_shared_override_validation_handles_class_and_instance_methods(self):
+        from libs.frame import validate_overrides
+
+        class Base:
+            @classmethod
+            def execute(cls):
+                pass
+
+            def run(self):
+                pass
+
+        class Inherited(Base):
+            pass
+
+        class Changed(Base):
+            @classmethod
+            def execute(cls):
+                pass
+
+            def run(self):
+                pass
+
+        for name, classmethods in (("execute", True), ("run", False)):
+            validate_overrides(Inherited, Base, (name,), error_type=TypeError,
+                               message="override {name}", classmethods=classmethods)
+            with self.assertRaisesRegex(TypeError, "override " + name):
+                validate_overrides(Changed, Base, (name,), error_type=TypeError,
+                                   message="override {name}", classmethods=classmethods)
+
+    def test_shared_frame_import_is_domain_independent(self):
+        import subprocess
+        import sys
+        from tests.framework.model import ROOT
+        code = ("import sys; import libs.frame; "
+                "assert not any(name.split('.')[0] in ('app', 'tests', 'github', 'config') "
+                "for name in sys.modules)")
+        result = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
