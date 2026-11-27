@@ -2,8 +2,7 @@
 """Branch and Actions deletion command with independent target validation."""
 
 from libs.command import Command
-from app.framework.model import pr_plan, actions_plan
-from app.wiring import register
+from app.wiring import register, pr_plan, actions_plan
 from github.delete import delete
 from libs.github import CLIENT
 

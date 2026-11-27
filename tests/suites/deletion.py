@@ -5,7 +5,7 @@ from copy import deepcopy
 import json
 from unittest.mock import Mock, call, patch
 
-from app.framework.model import ActionsContext
+from github.actions import ActionsContext
 from types import SimpleNamespace
 from github import actions, delete as deletion
 from libs.github import GitHubClient
@@ -365,7 +365,7 @@ class DeletionContract(TestSuite):
             from app.commands import delete as command
             target = ctx.target()
             validated = Mock(repository=REPO, ref=REF, run_id=13, targets=[target])
-            with patch("app.framework.model.ActionsContext") as context, \
+            with patch("github.actions.ActionsContext") as context, \
                     patch.object(command, "delete") as delete:
                 context.return_value.validate.return_value = validated
                 args = SimpleNamespace(target="actions")

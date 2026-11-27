@@ -5,7 +5,9 @@ import json
 import re
 
 from config import require_deletion, load_registry
-from libs.github import validate_sha, review_repository
+from libs.github import (CLIENT, validate_sha, review_repository,
+                         require_default_ref, parse_execute_comment, validate_pr_number)
+from libs.workflow import Context
 
 
 def actions_request(request):
@@ -161,3 +163,81 @@ def delete_actions_run(api, remove, repository, run_ref, run_id,
         [{"run_id": run_id, "expected_head_sha": expected_head_sha,
           "expected_run_attempt": expected_run_attempt}], current_run_id,
         report=lambda message: None)[0]
+
+
+class ActionsContext(Context):
+    """Validate exact owner approval, then normalize single and batch targets."""
+
+    def __init__(self, args, env=None, api=CLIENT.request):
+        super().__init__(env)
+        self.args = args
+        self.api = api
+
+    def validate(self):
+        self.require_event("workflow_dispatch", fresh=True)
+        args = self.args
+        if args.runs:
+            if any(value is not None for value in
+                   (args.run_id, args.expected_head_sha, args.expected_run_attempt)):
+                raise ValueError("Choose single or batch, not both.")
+            request = {"execution": "delete actions", "runs": json.loads(args.runs)}
+        else:
+            request = {"execution": "delete actions", "run_id": args.run_id,
+                       "expected_head_sha": args.expected_head_sha,
+                       "expected_run_attempt": args.expected_run_attempt}
+        # Preserve the approved wire format during comparison, normalize afterwards.
+        inputs = actions_request(request)
+        self._validate_approval(self.read_event(), inputs)
+        if self.run_id <= 0:
+            raise ValueError("Invalid current run ID.")
+        self.targets = (json.loads(inputs["runs"]) if args.runs else
+                        [{"run_id": int(inputs["run_id"]),
+                          "expected_head_sha": inputs["expected_head_sha"],
+                          "expected_run_attempt": int(inputs["expected_run_attempt"])}])
+        return self
+
+    def _validate_approval(self, event, inputs):
+        repository, ref = self.repository, self.ref
+        actor_id, workflow_ref = self.actor_id, self.workflow_ref
+        request_id, source_pr = self.args.request_id, self.args.source_pr
+        api = self.api
+        repo = event["repository"]
+        owner = str(repo["owner"]["id"])
+        if not (
+            repo["full_name"] == repository
+            and workflow_ref == f"{repository}/.github/workflows/actions_delete.yml@{ref}"
+        ):
+            raise ValueError("Unauthorized Actions deletion workflow.")
+        require_default_ref(ref, repo["default_branch"])
+        sender = event["sender"]
+        if str(sender["id"]) != actor_id:
+            raise ValueError("Workflow actor mismatch.")
+        if not request_id and not source_pr:
+            if actor_id != owner:
+                raise ValueError("Manual deletion requires the owner.")
+            return
+        if not re.fullmatch(r"comment-[1-9][0-9]*", request_id) or not isinstance(source_pr, str):
+            raise ValueError("Invalid source comment or PR.")
+        validate_pr_number(source_pr)
+        if actor_id != owner and not (
+            actor_id == "41898282" and sender["login"] == "github-actions[bot]"
+        ):
+            raise ValueError("Unauthorized dispatch actor.")
+        root = f"repos/{repository}"
+        comment_id = int(request_id.split("-", 1)[1])
+        comment = api("GET", f"{root}/issues/comments/{comment_id}")
+        pr = api("GET", f"{root}/pulls/{source_pr}")
+        api_url = self.env.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+        if not (
+            comment["id"] == comment_id
+            and comment["user"]["id"] == repo["owner"]["id"]
+            and comment["author_association"] == "OWNER"
+            and comment["created_at"] == comment["updated_at"]
+            and comment["issue_url"] == f"{api_url}/{root}/issues/{source_pr}"
+            and pr["number"] == int(source_pr)
+            and pr["base"]["repo"]["full_name"] == repository
+        ):
+            raise ValueError("Source comment is not an unchanged owner PR request.")
+        request = parse_execute_comment(comment["body"])
+        if actions_request(request) != inputs:
+            raise ValueError("Source approval does not match dispatch inputs.")

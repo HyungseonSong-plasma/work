@@ -3,9 +3,11 @@
 
 import json
 import re
+from functools import partial
 
 from config import load_names
-from libs.command import CommandRegistry
+from libs.command import CommandPlan, CommandRegistry
+from libs.workflow import pr_plan as workflow_pr_plan
 from libs.frame import validate_unique
 
 COMMANDS = CommandRegistry()
@@ -61,3 +63,16 @@ def resolve_execution(expression, parameters):
         if names.index("pr_merge.py") > names.index("branch_delete.py"):
             raise ValueError("PR merge must precede branch deletion.")
     return names
+
+
+# Bind project-specific policy to the reusable PR context factory.
+pr_plan = partial(workflow_pr_plan, resolve=resolve_execution)
+
+
+def actions_plan(action):
+    """Connect the dedicated Actions approval context to the command lifecycle."""
+    def prepare(args):
+        from github.actions import ActionsContext
+        return ActionsContext(args)
+
+    return CommandPlan(prepare, lambda ctx, args: ctx.validate(), action)
