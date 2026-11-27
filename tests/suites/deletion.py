@@ -194,6 +194,77 @@ class DeletionContract(TestSuite):
 
         self.run_cases(cases, check)
 
+    def test_actions_policy_schema_and_error_precedence(self):
+        cases = (
+            ("valid_min", 1, 1, [".github/workflows/a.yml"], [], None),
+            ("valid_max", 50, 20, [".github/workflows/a-b_2.yaml"], [1], None),
+            ("max_bool", True, 0, [], [False], "Invalid batch limit."),
+            ("max_high", 51, 1, [], [], "Invalid batch limit."),
+            ("keep_bool", 1, True, [], [], "Invalid retention count."),
+            ("keep_high", 1, 21, [], [], "Invalid retention count."),
+            ("path_empty", 1, 1, [], [False], "Invalid retained workflow paths."),
+            ("path_duplicate", 1, 1, [".github/workflows/a.yml", ".github/workflows/a.yml"], [],
+             "Invalid retained workflow paths."),
+            ("path_invalid", 1, 1, ["../a.yml"], [], "Invalid retained workflow paths."),
+            ("path_unhashable", 1, 1, [[]], [], "Invalid retained workflow paths."),
+            ("pin_bool", 1, 1, [".github/workflows/a.yml"], [True], "Invalid pinned run IDs."),
+            ("pin_duplicate", 1, 1, [".github/workflows/a.yml"], [1, 1], "Invalid pinned run IDs."),
+            ("pin_unhashable", 1, 1, [".github/workflows/a.yml"], [[]], "Invalid pinned run IDs."),
+        )
+
+        def check(ctx, maximum, keep, paths, pins, expected):
+            policy = {"max_batch": maximum, "keep_successful": keep,
+                      "protected_workflows": paths, "pinned_run_ids": pins}
+            with patch.object(actions, "load_registry", return_value=policy) as load:
+                if expected is None:
+                    self.assertIs(actions.actions_policy(), policy)
+                else:
+                    with self.assertRaises(ValueError) as error:
+                        actions.actions_policy()
+                    self.assertEqual(str(error.exception), expected)
+                load.assert_called_once_with("actions_policy")
+
+        self.run_cases(cases, check)
+
+    def test_actions_invalid_policy_or_targets_precede_remote_calls(self):
+        cases = (
+            ("shape_first", "shape", "Invalid Actions policy."),
+            ("policy_first", "policy", "Invalid batch limit."),
+            ("target_shape", "target_shape", "Invalid Actions target."),
+            ("integer_before_sha", "integer", "Expected positive integer run ID and attempt."),
+            ("sha_before_duplicate", "sha", "Expected a full lowercase Git commit SHA."),
+            ("duplicate_before_later_target", "duplicate", "Duplicate Actions run ID."),
+        )
+
+        def check(ctx, defect, expected):
+            policy = {"max_batch": 30, "keep_successful": 1,
+                      "protected_workflows": [".github/workflows/a.yml"], "pinned_run_ids": []}
+            targets = [ctx.target(), ctx.target(14)]
+            if defect == "shape":
+                policy.pop("pinned_run_ids")
+                policy["max_batch"] = False
+            elif defect == "policy":
+                policy["max_batch"] = False
+                targets = []
+            elif defect == "target_shape":
+                targets[0].pop("expected_head_sha")
+                targets[0]["run_id"] = False
+            elif defect == "integer":
+                targets[0].update(run_id=False, expected_head_sha="bad")
+            elif defect == "sha":
+                targets[1].update(run_id=12, expected_head_sha="bad")
+            else:
+                targets = [ctx.target(), ctx.target(), {}]
+            with patch.object(actions, "load_registry", return_value=policy) as load:
+                with self.assertRaises(ValueError) as error:
+                    actions.delete_actions_batch(targets=targets, report=Mock(), **ctx.batch_parameters)
+                self.assertEqual(str(error.exception), expected)
+                load.assert_called_once_with("actions_policy")
+            ctx.api.assert_not_called()
+            ctx.remove.assert_not_called()
+
+        self.run_cases(cases, check)
+
     def test_actions_target_wire_schema_is_exact(self):
         cases = (("single", "single"), ("batch", "batch"),
                  ("missing", "missing"), ("extra", "extra"), ("bool", "bool"))
