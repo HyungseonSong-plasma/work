@@ -25,3 +25,9 @@ Run comparator self-tests with `python3 -m unittest tests.verification.test_comp
 ## D4 source layout transition
 
 Use the comparator from the reviewed src-layout checkout. It selects exact legacy/flat/src paths, verifies probe imports originate from the selected snapshot, and sets the source Python path explicitly. The D4 transition compares all 1697 observations, accepting only the enumerated CLI display-name and child argv changes (child cwd checked against the appropriate trusted root); every other field and observation remains exact. Comparisons within the same layout retain strict equality. Source-only test execution is from the reviewed checkout root. Build/install verification: `python tests/verification/packaging_probe.py` in an environment with the pinned build frontend and access to the reviewed backend wheelhouse.
+
+## D5 QA
+
+The independent migration comparator self-test covers the complete 1697-record shape and the exact sixteen reviewed deltas. Negative cases reject wrong CLI output, argv, cwd, exit status, missing records/deltas and unrelated changes. The packaging probe also checks wheel RECORD integrity, universal wheel tag and actual child invocation with a poisoned PYTHONPATH fixture (no remote credentials/event). Use a clean environment and a reviewed backend wheelhouse; do not run verification with Python optimization enabled. Archive SHA256 values are build observations, not a reproducible-build guarantee.
+
+The clean-import check compares platform namespaces before and after installation; only the pre-existing Windows Python base-prefix `libs` namespace is allowed. The archive allowlist remains exact and independent of the environment.

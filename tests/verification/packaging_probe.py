@@ -2,6 +2,9 @@
 """Build and inspect application distributions; install each in a separate venv."""
 
 import argparse
+import base64
+import csv
+import io
 from email.parser import BytesParser
 import hashlib
 from pathlib import Path
@@ -30,6 +33,7 @@ PAYLOAD = SOURCE | RESOURCES
 # This runs as a real file so SuiteRegistry can inspect the test method source.
 SMOKE = r'''
 import io
+import json
 import os
 import sys
 import unittest
@@ -47,8 +51,24 @@ from work.libs.command import Command, CommandRegistry, local_plan
 from work.libs.workflow import Context
 
 assert Path(work.__file__).resolve().is_relative_to(Path(sys.prefix).resolve())
-for name in ("libs", "app", "github", "config", "tests"):
-    assert find_spec(name) is None, name
+def top_level_specs():
+    found = {}
+    for name in ("libs", "app", "github", "config", "tests"):
+        spec = find_spec(name)
+        found[name] = None if spec is None else [
+            spec.origin, [str(Path(p).resolve()) for p in (spec.submodule_search_locations or ())]]
+    return found
+
+before = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+after = top_level_specs()
+assert before == after, (before, after)
+for name, spec in before.items():
+    if spec is not None:
+        # Windows Python ships its own base-prefix libs namespace directory.
+        assert sys.platform == "win32" and name == "libs", (name, spec)
+        assert spec[0] is None and spec[1], spec
+        assert all(Path(p).is_relative_to(Path(sys.base_prefix).resolve()) for p in spec[1]), spec
+print("Top-level import baseline unchanged:", before, flush=True)
 metadata = distribution("work-framework")
 assert metadata.version == "0.1.0.dev0"
 assert metadata.metadata["Requires-Python"] == ">=3.11"
@@ -116,15 +136,26 @@ child.assert_called_once_with([sys.executable, "-E", "-s", "-m", "work", "merge"
                               cwd=Path(work.__file__).resolve().parent.parent, check=False)
 assert cli.main(["test"]) == 1
 # A real child with no credentials or event must refuse before any remote request.
-with patch.dict(os.environ, {"PATH": os.defpath}, clear=True):
-    assert execute.run_execution(("pr_merge.py",)) == 1
+# Poison PYTHONPATH from an unrelated directory; the child must ignore it.
+shadow = Path.cwd() / "work.py"
+marker = Path.cwd() / "shadow-loaded"
+shadow.write_text("from pathlib import Path\nPath(" + repr(str(marker)) + ").touch()\n", encoding="utf-8")
+try:
+    safe_env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "WINDIR")
+                if key in os.environ}
+    safe_env["PYTHONPATH"] = str(Path.cwd())
+    with patch.dict(os.environ, safe_env, clear=True):
+        assert execute.run_execution(("pr_merge.py",)) == 1
+    assert not marker.exists(), "Untrusted PYTHONPATH was loaded"
+finally:
+    shadow.unlink()
 print("Installed application smoke passed; canonical imports, resources, child execution and seven bindings verified.")
 '''
 
 
 def run(*args, cwd):
     print("+", *map(str, args), flush=True)
-    subprocess.run([str(arg) for arg in args], cwd=cwd, check=True)
+    subprocess.run([str(arg) for arg in args], cwd=cwd, check=True, timeout=180)
 
 
 def check_metadata(data):
@@ -142,6 +173,20 @@ def check_sources(files):
         assert files[name] == (ROOT / "src" / name).read_bytes(), name
 
 
+def check_record(files, dist_info):
+    record = dist_info + "RECORD"
+    rows = list(csv.reader(io.StringIO(files[record].decode("utf-8"))))
+    assert all(len(row) == 3 for row in rows)
+    assert len(rows) == len({row[0] for row in rows})
+    assert {row[0] for row in rows} == set(files)
+    for name, digest, size in rows:
+        if name == record:
+            assert digest == size == ""
+        else:
+            expected = base64.urlsafe_b64encode(hashlib.sha256(files[name]).digest()).rstrip(b"=").decode("ascii")
+            assert digest == "sha256=" + expected and size == str(len(files[name])), name
+
+
 def check_archives(wheel, sdist):
     dist_info = STEM + ".dist-info/"
     with zipfile.ZipFile(wheel) as archive:
@@ -153,6 +198,8 @@ def check_archives(wheel, sdist):
         check_metadata(files[dist_info + "METADATA"])
         assert files[dist_info + "top_level.txt"].splitlines() == [b"work"]
         assert b"work = work.app.cli:main" in files[dist_info + "entry_points.txt"]
+        check_record(files, dist_info)
+        assert b"Tag: py3-none-any" in files[dist_info + "WHEEL"]
     # Never extract an untrusted archive: inspect only regular files.
     with tarfile.open(sdist, "r:gz") as archive:
         members = archive.getmembers()
@@ -179,11 +226,25 @@ def verify_install(artifact, outside):
     env = outside / ("wheel-env" if artifact.suffix == ".whl" else "sdist-env")
     run(sys.executable, "-m", "venv", env, cwd=outside)
     python = env / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    baseline = outside / (env.name + "-imports.json")
+    # Capture platform-provided namespaces before installing anything.
+    code = """import json
+from importlib.util import find_spec
+from pathlib import Path
+found = {}
+for name in ("libs", "app", "github", "config", "tests"):
+    spec = find_spec(name)
+    found[name] = None if spec is None else [
+        spec.origin, [str(Path(p).resolve()) for p in (spec.submodule_search_locations or ())]]
+print(json.dumps(found))
+"""
+    baseline.write_bytes(subprocess.check_output(
+        [str(python), "-I", "-c", code], cwd=outside, timeout=30))
     run(python, "-m", "pip", "install", "--no-deps", artifact, cwd=outside)
     run(python, "-m", "pip", "check", cwd=outside)
     script = outside / "smoke.py"
     script.write_text(SMOKE, encoding="utf-8")
-    run(python, "-I", script, cwd=outside)
+    run(python, "-I", script, baseline, cwd=outside)
     run(python, "-I", "-m", "work", "--help", cwd=outside)
     console = env / ("Scripts/work.exe" if sys.platform == "win32" else "bin/work")
     run(console, "--help", cwd=outside)
